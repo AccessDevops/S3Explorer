@@ -67,7 +67,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Dependencies
 sudo apt update
 sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
-  libappindicator3-dev librsvg2-dev patchelf libsoup2.4-dev
+  libjavascriptcoregtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup2.4-dev
 ```
 
 #### Windows

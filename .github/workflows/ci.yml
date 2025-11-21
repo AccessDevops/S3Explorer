@@ -44,6 +44,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
             build-essential \
             curl \
             wget \
@@ -107,6 +108,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
             build-essential \
             curl \
             wget \
