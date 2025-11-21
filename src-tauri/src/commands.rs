@@ -53,7 +53,10 @@ pub async fn test_connection(profile: Profile) -> Result<TestConnectionResponse,
 
 /// List buckets for a profile
 #[tauri::command]
-pub async fn list_buckets(profile_id: String, state: State<'_, AppState>) -> Result<Vec<Bucket>, String> {
+pub async fn list_buckets(
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<Bucket>, String> {
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
@@ -153,7 +156,13 @@ pub async fn list_objects(
         .map_err(|e| e.to_string())?;
 
     adapter
-        .list_objects(&bucket, prefix.as_deref(), continuation_token, max_keys, use_delimiter.unwrap_or(true))
+        .list_objects(
+            &bucket,
+            prefix.as_deref(),
+            continuation_token,
+            max_keys,
+            use_delimiter.unwrap_or(true),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -330,7 +339,13 @@ pub async fn calculate_folder_size(
     // Paginate through all objects in the folder
     loop {
         let response = adapter
-            .list_objects(&bucket, Some(&prefix), continuation_token, Some(1000), false)
+            .list_objects(
+                &bucket,
+                Some(&prefix),
+                continuation_token,
+                Some(1000),
+                false,
+            )
             .await
             .map_err(|e| e.to_string())?;
 

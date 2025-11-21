@@ -26,8 +26,8 @@ impl ProfileStore {
             return Ok(Self::new());
         }
 
-        let content = fs::read_to_string(&path)
-            .map_err(|e| AppError::ProfileStorageError(e.to_string()))?;
+        let content =
+            fs::read_to_string(&path).map_err(|e| AppError::ProfileStorageError(e.to_string()))?;
 
         let store: ProfileStore = serde_json::from_str(&content)?;
         Ok(store)
@@ -39,13 +39,11 @@ impl ProfileStore {
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| AppError::ProfileStorageError(e.to_string()))?;
+            fs::create_dir_all(parent).map_err(|e| AppError::ProfileStorageError(e.to_string()))?;
         }
 
         let content = serde_json::to_string_pretty(&self)?;
-        fs::write(&path, content)
-            .map_err(|e| AppError::ProfileStorageError(e.to_string()))?;
+        fs::write(&path, content).map_err(|e| AppError::ProfileStorageError(e.to_string()))?;
 
         Ok(())
     }

@@ -108,7 +108,8 @@ impl S3Adapter {
 
     /// Get bucket ACL to determine if it's public or private
     pub async fn get_bucket_acl(&self, bucket_name: &str) -> Result<String, AppError> {
-        let acl = self.client
+        let acl = self
+            .client
             .get_bucket_acl()
             .bucket(bucket_name)
             .send()
@@ -116,19 +117,21 @@ impl S3Adapter {
             .map_err(|e| AppError::S3Error(format!("Failed to get bucket ACL: {}", e)))?;
 
         // Check if bucket has public grants
-        let is_public = acl.grants()
-            .iter()
-            .any(|grant| {
-                if let Some(grantee) = grant.grantee() {
-                    if let Some(uri) = grantee.uri() {
-                        // Check for AllUsers or AuthenticatedUsers groups
-                        return uri.contains("AllUsers") || uri.contains("AuthenticatedUsers");
-                    }
+        let is_public = acl.grants().iter().any(|grant| {
+            if let Some(grantee) = grant.grantee() {
+                if let Some(uri) = grantee.uri() {
+                    // Check for AllUsers or AuthenticatedUsers groups
+                    return uri.contains("AllUsers") || uri.contains("AuthenticatedUsers");
                 }
-                false
-            });
+            }
+            false
+        });
 
-        Ok(if is_public { "Public".to_string() } else { "Private".to_string() })
+        Ok(if is_public {
+            "Public".to_string()
+        } else {
+            "Private".to_string()
+        })
     }
 
     /// Calculate bucket statistics (total size and count) by listing ALL objects without delimiter
@@ -139,7 +142,8 @@ impl S3Adapter {
 
         // Paginate through ALL objects in the bucket (no delimiter)
         loop {
-            let mut request = self.client
+            let mut request = self
+                .client
                 .list_objects_v2()
                 .bucket(bucket_name)
                 .max_keys(1000);
@@ -357,7 +361,9 @@ impl S3Adapter {
                     .key(key)
                     .presigned(presigning_config)
                     .await
-                    .map_err(|e| AppError::S3Error(format!("Failed to generate presigned URL: {}", e)))?;
+                    .map_err(|e| {
+                        AppError::S3Error(format!("Failed to generate presigned URL: {}", e))
+                    })?;
                 presigned.uri().to_string()
             }
             "PUT" => {
@@ -368,10 +374,17 @@ impl S3Adapter {
                     .key(key)
                     .presigned(presigning_config)
                     .await
-                    .map_err(|e| AppError::S3Error(format!("Failed to generate presigned URL: {}", e)))?;
+                    .map_err(|e| {
+                        AppError::S3Error(format!("Failed to generate presigned URL: {}", e))
+                    })?;
                 presigned.uri().to_string()
             }
-            _ => return Err(AppError::ConfigError(format!("Unsupported method: {}", method))),
+            _ => {
+                return Err(AppError::ConfigError(format!(
+                    "Unsupported method: {}",
+                    method
+                )))
+            }
         };
 
         Ok(url)
@@ -391,7 +404,13 @@ impl S3Adapter {
         // Paginate through all objects in the folder (without delimiter to get all nested objects)
         loop {
             let response = self
-                .list_objects(bucket, Some(&folder_prefix), continuation_token, Some(1000), false)
+                .list_objects(
+                    bucket,
+                    Some(&folder_prefix),
+                    continuation_token,
+                    Some(1000),
+                    false,
+                )
                 .await?;
 
             // Delete all objects in this batch
@@ -408,7 +427,7 @@ impl S3Adapter {
         }
 
         // Also delete the folder marker itself (if it exists)
-        if let Err(_) = self.delete_object(bucket, &folder_prefix).await {
+        if self.delete_object(bucket, &folder_prefix).await.is_err() {
             // Ignore error if the folder marker doesn't exist
         }
 
@@ -416,7 +435,11 @@ impl S3Adapter {
     }
 
     /// List all versions of an object
-    pub async fn list_object_versions(&self, bucket: &str, key: &str) -> Result<ListObjectVersionsResponse, AppError> {
+    pub async fn list_object_versions(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Result<ListObjectVersionsResponse, AppError> {
         let output = self
             .client
             .list_object_versions()

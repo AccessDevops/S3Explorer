@@ -26,6 +26,7 @@ pub enum AppError {
 }
 
 /// Error response sent to frontend
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,

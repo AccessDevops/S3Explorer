@@ -68,7 +68,6 @@ import { useAppStore } from '../stores/app'
 import { useToast } from '../composables/useToast'
 import { getObject, putObject } from '../services/tauri'
 import type { S3Object } from '../types'
-import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   object: S3Object

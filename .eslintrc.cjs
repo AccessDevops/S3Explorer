@@ -11,5 +11,25 @@ module.exports = {
   ],
   parserOptions: {
     ecmaVersion: 'latest'
-  }
+  },
+  rules: {
+    // Allow single-word component names for UI library components
+    'vue/multi-word-component-names': ['error', {
+      ignores: ['Badge', 'Button', 'Card', 'Dialog', 'Input', 'Separator', 'Table']
+    }],
+    // Disable unused vars warning for props destructuring (Vue 3 Composition API)
+    '@typescript-eslint/no-unused-vars': ['error', {
+      argsIgnorePattern: '^_',
+      varsIgnorePattern: '^_',
+      destructuredArrayIgnorePattern: '^_'
+    }]
+  },
+  overrides: [
+    {
+      files: ['tailwind.config.js', '*.config.js'],
+      env: {
+        node: true
+      }
+    }
+  ]
 }

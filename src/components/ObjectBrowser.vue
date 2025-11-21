@@ -1259,7 +1259,7 @@ async function renameFileHandler() {
 
     // S3 doesn't have rename, so we copy then delete
     // First, get the object
-    const { getObject, copyObject } = await import('../services/tauri')
+    const { getObject } = await import('../services/tauri')
     const objectData = await getObject(
       appStore.currentProfile.id,
       appStore.currentBucket,

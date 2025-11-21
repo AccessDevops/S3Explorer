@@ -10,11 +10,12 @@ pub struct Profile {
     pub access_key: String,
     pub secret_key: String,
     pub session_token: Option<String>,
-    pub path_style: bool,  // Force path-style addressing
-    pub use_tls: bool,     // Use HTTPS (false for local MinIO)
+    pub path_style: bool, // Force path-style addressing
+    pub use_tls: bool,    // Use HTTPS (false for local MinIO)
 }
 
 /// Request to test a connection
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct TestConnectionRequest {
     pub profile: Profile,
@@ -47,6 +48,7 @@ pub struct S3Object {
 }
 
 /// Request to list objects
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ListObjectsRequest {
     pub profile_id: String,
@@ -66,6 +68,7 @@ pub struct ListObjectsResponse {
 }
 
 /// Request to get an object
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct GetObjectRequest {
     pub profile_id: String,
@@ -82,6 +85,7 @@ pub struct GetObjectResponse {
 }
 
 /// Request to put an object
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct PutObjectRequest {
     pub profile_id: String,
@@ -92,6 +96,7 @@ pub struct PutObjectRequest {
 }
 
 /// Request to delete an object
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct DeleteObjectRequest {
     pub profile_id: String,
@@ -100,6 +105,7 @@ pub struct DeleteObjectRequest {
 }
 
 /// Request to copy an object
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct CopyObjectRequest {
     pub profile_id: String,
@@ -110,6 +116,7 @@ pub struct CopyObjectRequest {
 }
 
 /// Request to create a folder (empty object with trailing slash)
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct CreateFolderRequest {
     pub profile_id: String,
@@ -118,6 +125,7 @@ pub struct CreateFolderRequest {
 }
 
 /// Request to generate a presigned URL
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct PresignedUrlRequest {
     pub profile_id: String,
