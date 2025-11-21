@@ -42,8 +42,10 @@
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-              <path d="m15 5 4 4"/>
+              <path
+                d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+              />
+              <path d="m15 5 4 4" />
             </svg>
           </Button>
           <Button
@@ -64,11 +66,11 @@
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path d="M3 6h18"/>
-              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-              <line x1="10" x2="10" y1="11" y2="17"/>
-              <line x1="14" x2="14" y1="11" y2="17"/>
+              <path d="M3 6h18" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              <line x1="10" x2="10" y1="11" y2="17" />
+              <line x1="14" x2="14" y1="11" y2="17" />
             </svg>
           </Button>
         </div>
@@ -79,7 +81,9 @@
     <Dialog v-model:open="showAddModal">
       <DialogContent class="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{{ editingProfile ? t('edit') : t('add') }} {{ t('connectionProfile') }}</DialogTitle>
+          <DialogTitle
+            >{{ editingProfile ? t('edit') : t('add') }} {{ t('connectionProfile') }}</DialogTitle
+          >
           <DialogDescription>
             {{ t('configureS3') }}
           </DialogDescription>
@@ -93,10 +97,7 @@
 
           <div class="space-y-2">
             <label class="text-sm font-medium">{{ t('endpoint') }} (optional)</label>
-            <Input
-              v-model="formData.endpoint"
-              :placeholder="t('endpointPlaceholder')"
-            />
+            <Input v-model="formData.endpoint" :placeholder="t('endpointPlaceholder')" />
             <p class="text-xs text-muted-foreground">{{ t('endpointDescription') }}</p>
           </div>
 
@@ -107,11 +108,7 @@
 
           <div class="space-y-2">
             <label class="text-sm font-medium">{{ t('accessKey') }} *</label>
-            <Input
-              v-model="formData.access_key"
-              required
-              placeholder="AKIAIOSFODNN7EXAMPLE"
-            />
+            <Input v-model="formData.access_key" required placeholder="AKIAIOSFODNN7EXAMPLE" />
           </div>
 
           <div class="space-y-2">
@@ -165,6 +162,25 @@
             "
           >
             {{ testResult.message }}
+
+            <!-- Suggestion to enable path_style -->
+            <div
+              v-if="testResult.suggest_path_style"
+              class="mt-3 flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded"
+            >
+              <span class="text-blue-800 text-xs flex-1"
+                >💡 Path-style addressing is required for this endpoint</span
+              >
+              <Button
+                type="button"
+                size="sm"
+                @click="enablePathStyle"
+                class="text-xs h-7"
+                variant="default"
+              >
+                Enable Path Style
+              </Button>
+            </div>
           </div>
 
           <DialogFooter>
@@ -303,7 +319,7 @@ async function deleteProfileConfirm(profile: Profile) {
     message: `${t('deleteConfirm')} "${profile.name}"?`,
     confirmText: t('delete'),
     cancelText: t('cancel'),
-    variant: 'destructive'
+    variant: 'destructive',
   })
 
   if (confirmed) {
@@ -314,9 +330,14 @@ async function deleteProfileConfirm(profile: Profile) {
         title: t('errorOccurred'),
         message: `Failed to delete profile: ${e}`,
         confirmText: t('close'),
-        variant: 'destructive'
+        variant: 'destructive',
       })
     }
   }
+}
+
+function enablePathStyle() {
+  formData.path_style = true
+  testResult.value = null
 }
 </script>

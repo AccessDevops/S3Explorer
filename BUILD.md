@@ -11,7 +11,8 @@ Ce guide explique comment créer des binaires exécutables pour toutes les plate
 
 ### Windows
 - **MSI** - Installateur Windows standard
-- **NSIS** - Installateur compact (.exe)
+- **NSIS** - Installateur compact (setup.exe)
+- **Portable** - Exécutable autonome (.exe, sans installation)
 - Architecture: x64
 
 ### Linux
@@ -19,6 +20,26 @@ Ce guide explique comment créer des binaires exécutables pour toutes les plate
 - **DEB** - Pour Debian/Ubuntu
 - **RPM** - Pour Fedora/RHEL/openSUSE
 - Architecture: x64
+
+## 💡 Quel format choisir ?
+
+### Windows
+- **MSI** : Recommandé pour installations d'entreprise (GPO, SCCM)
+- **NSIS (setup.exe)** : Recommandé pour utilisateurs finaux (plus petit, moderne)
+- **Portable (.exe)** :
+  - ✅ Aucune installation requise
+  - ✅ Parfait pour clés USB ou déploiement temporaire
+  - ✅ Ne modifie pas le registre Windows
+  - ✅ Données stockées dans le dossier utilisateur
+  - ⚠️ Nécessite WebView2 Runtime (généralement déjà installé sur Windows 10/11)
+
+### Linux
+- **AppImage** : Le plus simple, pas de permissions root nécessaires
+- **DEB** : Intégration système complète (Ubuntu/Debian)
+- **RPM** : Intégration système complète (Fedora/RHEL)
+
+### macOS
+- **DMG** : Standard macOS, drag-and-drop dans Applications
 
 ## 🚀 Build Automatique (Recommandé)
 
@@ -101,7 +122,7 @@ npm run tauri:build
 Les binaires seront dans :
 - macOS: `src-tauri/target/release/bundle/dmg/` et `src-tauri/target/release/bundle/macos/`
 - Linux: `src-tauri/target/release/bundle/deb/`, `appimage/`, `rpm/`
-- Windows: `src-tauri/target/release/bundle/msi/` et `nsis/`
+- Windows: `src-tauri/target/release/bundle/msi/`, `nsis/` et `src-tauri/target/release/*.exe` (portable)
 
 #### Build pour une plateforme spécifique
 
@@ -211,6 +232,8 @@ sudo dnf install gtk3 webkit2gtk4.1 libsoup
 Tailles approximatives :
 - **macOS DMG** : ~15-20 MB (Universal Binary)
 - **Windows MSI** : ~12-15 MB
+- **Windows NSIS** : ~12-14 MB
+- **Windows Portable** : ~10-12 MB (exécutable autonome)
 - **Linux AppImage** : ~18-22 MB
 - **Linux DEB/RPM** : ~10-12 MB
 

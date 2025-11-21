@@ -16,10 +16,7 @@
         <Button variant="outline" @click="handleCancel">
           {{ cancelText || 'Cancel' }}
         </Button>
-        <Button
-          :variant="variant"
-          @click="handleConfirm"
-        >
+        <Button :variant="variant" @click="handleConfirm">
           {{ confirmText || 'Confirm' }}
         </Button>
       </DialogFooter>

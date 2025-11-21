@@ -25,4 +25,11 @@ export default defineConfig({
     // Produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_DEBUG,
   },
+  // Monaco Editor optimization
+  optimizeDeps: {
+    include: ['monaco-editor']
+  },
+  worker: {
+    format: 'es'
+  }
 })

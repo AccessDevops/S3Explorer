@@ -27,6 +27,7 @@ pub struct TestConnectionResponse {
     pub success: bool,
     pub message: String,
     pub bucket_count: Option<usize>,
+    pub suggest_path_style: Option<bool>, // Suggest enabling path_style if connection failed without it
 }
 
 /// S3 Bucket information

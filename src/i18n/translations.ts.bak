@@ -2356,6 +2356,213 @@ export const translations = {
     loadingMayTakeTime: 'Încărcarea fișierelor mari poate dura.',
     loadFile: 'Încarcă fișier',
   },
+    view: 'Vizualizare',
+    create: 'Creare',
+    clear: 'Ștergere',
+    testConnection: 'Testare conexiune',
+    selected: 'selectat',
+
+    // Setări
+    settings: 'Setări',
+    language: 'Limbă',
+    languageDescription: 'Alegeți limba dvs. preferată',
+
+    // Conexiuni
+    connections: 'Conexiuni',
+    addConnection: 'Adăugare conexiune',
+    editConnection: 'Editare conexiune',
+    deleteConnection: 'Ștergere conexiune',
+    connectionProfile: 'Profil de conexiune',
+    profileName: 'Nume profil',
+    endpoint: 'URL endpoint',
+    endpointPlaceholder: 'http://localhost:9000 (lăsați gol pentru AWS)',
+    endpointDescription: 'Pentru MinIO, Backblaze sau alte servicii compatibile cu S3',
+    region: 'Regiune',
+    accessKey: 'Cheie de acces',
+    secretKey: 'Cheie secretă',
+    sessionToken: 'Token de sesiune',
+    sessionTokenPlaceholder: 'Pentru credențiale temporare',
+    pathStyle: 'Forțare adresare în stil cale (necesară pentru MinIO)',
+    useTls: 'Utilizare TLS/HTTPS',
+    configureS3:
+      'Configurați setările conexiunii S3. Suportă AWS, MinIO, Backblaze și alte servicii compatibile cu S3.',
+
+    // Depozite
+    buckets: 'Depozite',
+    bucket: 'Depozit',
+    selectBucket: 'Selectare depozit',
+    createBucket: 'Creare depozit',
+    bucketName: 'Nume depozit',
+    bucketNamePlaceholder: 'my-bucket-name',
+    noBuckets: 'Niciun depozit disponibil',
+    bucketStats: 'Statistici',
+    bucketVisibility: 'Vizibilitate',
+    bucketSize: 'Dimensiune',
+    bucketObjects: 'Obiecte',
+
+    // Obiecte
+    objects: 'Obiecte',
+    folders: 'Dosare',
+    files: 'Fișiere',
+    newFolder: 'Dosar nou',
+    newFile: 'Fișier nou',
+    folderName: 'Nume dosar',
+    fileName: 'Nume fișier',
+    fileContent: 'Conținut',
+    fileContentPlaceholder: 'Introduceți conținutul fișierului...',
+
+    // Statistici
+    items: 'articole',
+    item: 'articol',
+    totalSize: 'Dimensiune totală',
+
+    // Mesaje
+    welcomeTitle: 'Bun venit în S3 Explorer',
+    welcomeMessageNoProfile: 'Vă rugăm să creați sau să selectați un profil de conexiune pentru a începe.',
+    welcomeMessageNoBucket: 'Vă rugăm să selectați un depozit din bara laterală.',
+
+    // Căutare
+    searchPlaceholder: 'Căutare fișiere...',
+    searching: 'Se caută...',
+
+    // Meniu contextual
+    createFileHere: 'Fișier nou',
+    createFolderHere: 'Dosar nou',
+
+    // Erori
+    errorOccurred: 'A apărut o eroare',
+    deleteConfirm: 'Sunteți sigur că doriți să ștergeți',
+
+    // Acțiuni
+    uploading: 'Se încarcă...',
+    downloading: 'Se descarcă...',
+    deleting: 'Se șterge...',
+    creating: 'Se crează...',
+    renaming: 'Se redenumește...',
+    loading: 'Se încarcă...',
+    calculating: 'Se calculează...',
+    saving: 'Se salvează...',
+    remaining: 'rămas',
+    estimating: 'Se estimează...',
+
+    // Mesaje Toast
+    loadingBuckets: 'Se încarcă depozitele...',
+    loadedBuckets: '{0} depozit(e) încarcate',
+    failedLoadBuckets: 'Eroare la încărcarea depozitelor',
+    loadingObjects: 'Se încarcă obiecte de la {0}...',
+    loadedObjects: '{0} obiect(e) încarcate',
+    moreObjectsAvailable: '{0} obiect(e) încarcate (mai multe disponibile)',
+    failedLoadObjects: 'Eroare la încărcarea obiectelor',
+
+    // Încărcare
+    dropFilesHere: 'Trageți fișierele aici pentru a le încărca',
+    uploadFile: 'Încărcare fișier',
+    selectedFile: 'Selectat',
+    size: 'Dimensiune',
+    dragDropHintTitle: 'Trageți și plasați fișiere aici',
+    dragDropHintDescription: 'Sau utilizați butonul Încărcare pentru a selecta fișiere',
+
+    // Operații de dosar
+    createFolder: 'Creare dosar',
+    folderDeletedSuccess: 'Dosarul a fost șters cu succes! {0} obiecte eliminate.',
+
+    // Operații de fișier
+    renameFile: 'Redenumire fișier',
+    newName: 'Nume nou',
+    enterNewFileName: 'Introduceți noul nume de fișier',
+    createNewFile: 'Creare fișier nou',
+    contentOptional: 'Conținut (opțional)',
+    fileDownloadedSuccess: 'Fișier descărcat cu succes!',
+    changeContentType: 'Schimbarea tipului de conținut',
+    contentType: 'Tip de conținut',
+    contentTypeUpdated: 'Tipul de conținut a fost actualizat cu succes!',
+    viewVersions: 'Vizualizare versiuni',
+    versions: 'Versiuni',
+    version: 'Versiune',
+    versionId: 'ID versiune',
+    latest: 'Cel mai recent',
+    noVersions: 'Nicio versiune disponibilă',
+    versioningNotEnabled: 'Versionarea nu este activată pentru acest depozit',
+
+    // Confirmări
+    deleteFileConfirm: 'Sunteți sigur că doriți să ștergeți "{0}"?',
+    deleteFolderConfirm: 'Sunteți sigur că doriți să ștergeți dosarul "{0}" și tot conținutul acestuia?',
+    deleteItemsConfirm: 'Sunteți sigur că doriți să ștergeți {0} articol{1}?',
+    fileExistsConfirm:
+      'Un fișier numit "{0}" există deja în această locație. Doriți să îl înlocuiți?',
+
+    // Mesaje de succes
+    uploadSuccess: 'Fișier(e) {0}{1} încarcate cu succes!',
+    deleteSuccess: 'Articol(e) {0}{1} șters(e) cu succes!',
+    filesDownloadedSuccess: '{0} fișier(e) descarcate cu succes!',
+
+    // Mesaje de eroare
+    uploadFailed: 'Eroare la încărcare',
+    downloadFailed: 'Eroare la descărcare',
+    deleteFailed: 'Eroare la ștergere',
+    createFailed: 'Eroare la crearea dosarului',
+    renameFailed: 'Eroare la redenumire',
+    pasteFailed: 'Eroare la lipirea fișierului',
+    createFileFailed: 'Eroare la crearea fișierului',
+    deleteOperationFailed: 'Operația de ștergere a eșuat',
+    uploadPartialSuccess: '{0} fișier(e) încarcate, {1} eșuat(e)',
+    deletePartialSuccess: '{0} articol(e) șters(e), {1} eșuat(e)',
+    downloadPartialSuccess: '{0} fișier(e) descarcate, {1} eșuat(e)',
+    selectProfileFirst: 'Vă rugăm să selectați mai întâi un profil și un depozit',
+    cannotCopyFolders: 'Nu se pot copia dosarele. Vă rugăm să selectați numai fișiere.',
+    multiCopyNotSupported: 'Copia mai multor fișiere nu este suportată încă. Vă rugăm să selectați doar un fișier.',
+    noFilesToDownload: 'Niciun fișier selectat. Vă rugăm să selectați fișiere pentru descărcare.',
+    selectDownloadFolder: 'Selectare folder de descărcare',
+
+    // Căutare
+    searchFilesAndFolders: 'Căutare fișiere și dosare...',
+    searchingAllObjects: 'Se caută toate obiectele din depozit',
+    found: 'Găsit',
+    resultsFound: 'rezultate găsite',
+    stopSearch: 'Oprire',
+    searchLocal: 'Căutare locală',
+    searchGlobal: 'Căutare globală',
+    searchMode: 'Modul de căutare',
+    localSearchDescription: 'Căutare în dosarul curent și subdosarele',
+    globalSearchDescription: 'Căutare în întregul depozit',
+    batchSizeSetting: 'Dimensiunea lotului',
+    batchSizeDescription: 'Numărul de obiecte de încărcat per pagină (1-1000)',
+
+    // Paginare
+    loadMore: 'Încărcați mai multe',
+    showing: 'Se arată',
+    moreAvailable: 'mai mult disponibil',
+    loadingMore: 'Se încarcă mai multe...',
+
+    // Filele detalii obiect
+    content: 'Conținut',
+    permissions: 'Permisiuni',
+    headers: 'Antete',
+    tags: 'Etichete',
+    eventLog: 'Jurnal de evenimente',
+    metadata: 'Metadate',
+    owner: 'Proprietar',
+    acl: 'Lista de control al accesului',
+    publicRead: 'Citire publică',
+    privateAccess: 'Privat',
+    noPermissions: 'Nicio permisiune disponibilă',
+    noTags: 'Nicio etichetă',
+    noHeaders: 'Nicio antetă',
+    noEvents: 'Niciun jurnal de evenimente disponibil',
+    key: 'Cheie',
+    value: 'Valoare',
+    lastAccess: 'Ultimul acces',
+    lastModified: 'Ultima modificare',
+    storageClass: 'Clasa de stocare',
+    etag: 'ETag',
+    serverSideEncryption: 'Criptare la nivel de server',
+    fileTooLarge: 'Fișier prea mare pentru previzualizare',
+    fileTooLargeLimit: 'limită',
+    pleaseDownload: 'Vă rugăm să descărcați acest fișier pentru a-l vizualiza.',
+    largeFileDetected: 'Fișier mare detectat',
+    loadingMayTakeTime: 'Încărcarea fișierelor mari poate lua ceva timp.',
+    loadFile: 'Încărcare fișier',
+  },
 
 
 

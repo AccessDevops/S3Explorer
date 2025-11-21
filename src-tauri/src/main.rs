@@ -28,6 +28,7 @@ fn main() {
             put_object,
             delete_object,
             copy_object,
+            change_content_type,
             create_folder,
             generate_presigned_url,
             calculate_folder_size,

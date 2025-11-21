@@ -39,7 +39,10 @@ export async function getBucketAcl(profileId: string, bucketName: string): Promi
   return await invoke('get_bucket_acl', { profileId, bucketName })
 }
 
-export async function calculateBucketStats(profileId: string, bucketName: string): Promise<[number, number]> {
+export async function calculateBucketStats(
+  profileId: string,
+  bucketName: string
+): Promise<[number, number]> {
   return await invoke('calculate_bucket_stats', { profileId, bucketName })
 }
 
@@ -90,11 +93,7 @@ export async function putObject(
   })
 }
 
-export async function deleteObject(
-  profileId: string,
-  bucket: string,
-  key: string
-): Promise<void> {
+export async function deleteObject(profileId: string, bucket: string, key: string): Promise<void> {
   return await invoke('delete_object', {
     profileId,
     bucket,
@@ -115,6 +114,20 @@ export async function copyObject(
     sourceKey,
     destBucket,
     destKey,
+  })
+}
+
+export async function changeContentType(
+  profileId: string,
+  bucket: string,
+  key: string,
+  newContentType: string
+): Promise<void> {
+  return await invoke('change_content_type', {
+    profileId,
+    bucket,
+    key,
+    newContentType,
   })
 }
 

@@ -44,11 +44,9 @@ pub async fn delete_profile(profile_id: String, state: State<'_, AppState>) -> R
 /// Test a connection profile
 #[tauri::command]
 pub async fn test_connection(profile: Profile) -> Result<TestConnectionResponse, String> {
-    let adapter = S3Adapter::from_profile(&profile)
+    S3Adapter::test_connection_with_profile(&profile)
         .await
-        .map_err(|e| e.to_string())?;
-
-    adapter.test_connection().await.map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())
 }
 
 /// List buckets for a profile
@@ -263,6 +261,30 @@ pub async fn copy_object(
         .map_err(|e| e.to_string())
 }
 
+/// Change the content-type of an object (copies object to itself with new metadata)
+#[tauri::command]
+pub async fn change_content_type(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    new_content_type: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .change_content_type(&bucket, &key, &new_content_type)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Create a folder (empty object with trailing slash)
 #[tauri::command]
 pub async fn create_folder(
@@ -316,7 +338,7 @@ pub async fn generate_presigned_url(
     })
 }
 
-/// Calculate folder size by summing all objects in the prefix
+/// Calculate folder size by summing ALL objects in the prefix (including all subdirectories recursively)
 #[tauri::command]
 pub async fn calculate_folder_size(
     profile_id: String,
@@ -333,35 +355,10 @@ pub async fn calculate_folder_size(
         .await
         .map_err(|e| e.to_string())?;
 
-    let mut total_size: i64 = 0;
-    let mut continuation_token: Option<String> = None;
-
-    // Paginate through all objects in the folder
-    loop {
-        let response = adapter
-            .list_objects(
-                &bucket,
-                Some(&prefix),
-                continuation_token,
-                Some(1000),
-                false,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-
-        // Sum up object sizes
-        for obj in response.objects {
-            total_size += obj.size;
-        }
-
-        // Check if there are more pages
-        continuation_token = response.continuation_token;
-        if continuation_token.is_none() {
-            break;
-        }
-    }
-
-    Ok(total_size)
+    adapter
+        .calculate_folder_size(&bucket, &prefix)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Delete a folder and all its contents

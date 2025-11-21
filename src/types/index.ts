@@ -16,6 +16,7 @@ export interface TestConnectionResponse {
   success: boolean
   message: string
   bucket_count?: number
+  suggest_path_style?: boolean // Suggest enabling path_style if connection failed without it
 }
 
 // Bucket

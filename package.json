@@ -20,10 +20,12 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@phosphor-icons/vue": "^2.2.1",
     "@radix-icons/vue": "^1.0.0",
     "@tauri-apps/api": "^1.5.3",
     "@vueuse/core": "^14.0.0",
     "lucide-vue-next": "^0.554.0",
+    "monaco-editor": "^0.55.1",
     "pinia": "^2.1.7",
     "radix-vue": "^1.9.17",
     "reka-ui": "^2.6.0",

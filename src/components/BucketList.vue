@@ -3,10 +3,22 @@
     <div class="flex justify-between items-center mb-4">
       <h3 class="text-lg font-semibold">{{ t('buckets') }}</h3>
       <div class="flex gap-1">
-        <Button size="icon" variant="ghost" @click="showCreateBucketModal = true" :title="t('createBucket')" class="h-8 w-8">
+        <Button
+          size="icon"
+          variant="ghost"
+          @click="showCreateBucketModal = true"
+          :title="t('createBucket')"
+          class="h-8 w-8"
+        >
           +
         </Button>
-        <Button size="icon" variant="ghost" @click="refreshBuckets()" :title="t('refresh')" class="h-8 w-8">
+        <Button
+          size="icon"
+          variant="ghost"
+          @click="refreshBuckets()"
+          :title="t('refresh')"
+          class="h-8 w-8"
+        >
           ⟳
         </Button>
       </div>
@@ -22,9 +34,7 @@
         :key="bucket.name"
         class="flex items-center gap-2 p-3 rounded-md cursor-pointer transition-colors"
         :class="
-          appStore.currentBucket === bucket.name
-            ? 'bg-white/20'
-            : 'bg-white/5 hover:bg-white/10'
+          appStore.currentBucket === bucket.name ? 'bg-white/20' : 'bg-white/5 hover:bg-white/10'
         "
         @click="selectBucket(bucket.name)"
       >
@@ -32,17 +42,26 @@
         <div class="flex-1 truncate">
           <div class="truncate">{{ bucket.name }}</div>
           <div v-if="bucketStats[bucket.name]" class="text-xs text-muted-foreground/70 mt-0.5">
-            {{ formatSize(bucketStats[bucket.name].size) }} · {{ bucketStats[bucket.name].count }} object{{ bucketStats[bucket.name].count !== 1 ? 's' : '' }}
+            {{ formatSize(bucketStats[bucket.name].size) }} ·
+            {{ bucketStats[bucket.name].count }} object{{
+              bucketStats[bucket.name].count !== 1 ? 's' : ''
+            }}
           </div>
-          <div v-else-if="loadingStats[bucket.name]" class="text-xs text-muted-foreground/50 mt-0.5">
+          <div
+            v-else-if="loadingStats[bucket.name]"
+            class="text-xs text-muted-foreground/50 mt-0.5"
+          >
             {{ t('loading') }}
           </div>
           <div class="text-xs text-muted-foreground/60 mt-0.5 flex items-center gap-2">
             <span v-if="bucket.creation_date">{{ formatDate(bucket.creation_date) }}</span>
             <span v-if="bucketAcls[bucket.name]" class="inline-flex items-center gap-1">
               <span v-if="bucket.creation_date">·</span>
-              <span :class="bucketAcls[bucket.name] === 'Public' ? 'text-yellow-500' : 'text-green-500'">
-                {{ bucketAcls[bucket.name] === 'Public' ? '🔓' : '🔒' }} {{ bucketAcls[bucket.name] }}
+              <span
+                :class="bucketAcls[bucket.name] === 'Public' ? 'text-yellow-500' : 'text-green-500'"
+              >
+                {{ bucketAcls[bucket.name] === 'Public' ? '🔓' : '🔒' }}
+                {{ bucketAcls[bucket.name] }}
               </span>
             </span>
           </div>
@@ -54,7 +73,29 @@
       v-if="appStore.error"
       class="mt-4 p-3 bg-red-500/20 rounded-md text-sm text-red-200 border border-red-500/30"
     >
-      {{ appStore.error }}
+      <div>{{ appStore.error }}</div>
+
+      <!-- Suggestion to enable path_style if not already enabled -->
+      <div
+        v-if="
+          appStore.currentProfile &&
+          !appStore.currentProfile.path_style &&
+          appStore.currentProfile.endpoint
+        "
+        class="mt-3 flex items-center gap-2 p-2 bg-blue-500/20 border border-blue-500/30 rounded"
+      >
+        <span class="text-blue-200 text-xs flex-1"
+          >💡 This might be a path-style addressing issue. Try enabling 'Force Path Style' in your
+          profile settings.</span
+        >
+        <Button
+          size="sm"
+          @click="suggestEnablePathStyle"
+          class="text-xs h-7 bg-blue-500 hover:bg-blue-600"
+        >
+          Open Settings
+        </Button>
+      </div>
     </div>
 
     <!-- Create Bucket Modal -->
@@ -76,12 +117,17 @@
               Bucket names must be unique and follow DNS naming conventions
             </p>
           </div>
-          <div v-if="createError" class="p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">
+          <div
+            v-if="createError"
+            class="p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm"
+          >
             {{ createError }}
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="showCreateBucketModal = false">{{ t('cancel') }}</Button>
+          <Button variant="outline" @click="showCreateBucketModal = false">{{
+            t('cancel')
+          }}</Button>
           <Button @click="createBucketHandler" :disabled="!newBucketName.trim() || creating">
             {{ creating ? t('creating') : t('create') }}
           </Button>
@@ -178,7 +224,7 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
   const cached = statsCache.value[bucketName]
   const now = Date.now()
 
-  if (!forceRefresh && cached && (now - cached.timestamp) < STATS_CACHE_TTL) {
+  if (!forceRefresh && cached && now - cached.timestamp < STATS_CACHE_TTL) {
     // Use cached stats
     bucketStats.value[bucketName] = cached.stats
     return
@@ -195,7 +241,7 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
 
     const stats = {
       size: totalSize,
-      count: totalCount
+      count: totalCount,
     }
 
     bucketStats.value[bucketName] = stats
@@ -203,7 +249,7 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
     // Update cache
     statsCache.value[bucketName] = {
       stats,
-      timestamp: now
+      timestamp: now,
     }
   } catch (e) {
     console.error(`Failed to load stats for bucket ${bucketName}:`, e)
@@ -229,9 +275,9 @@ async function loadAllBucketStats(forceRefresh = false) {
 
   // Load stats and ACLs for all buckets in parallel
   await Promise.all(
-    appStore.buckets.flatMap(bucket => [
+    appStore.buckets.flatMap((bucket) => [
       loadBucketStats(bucket.name, forceRefresh),
-      loadBucketAcl(bucket.name)
+      loadBucketAcl(bucket.name),
     ])
   )
 }
@@ -250,7 +296,7 @@ function formatDate(dateString: string): string {
     return date.toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
     })
   } catch {
     return dateString
@@ -258,11 +304,14 @@ function formatDate(dateString: string): string {
 }
 
 // Watch for changes in buckets list
-watch(() => appStore.buckets, async (newBuckets) => {
-  if (newBuckets.length > 0) {
-    await loadAllBucketStats()
+watch(
+  () => appStore.buckets,
+  async (newBuckets) => {
+    if (newBuckets.length > 0) {
+      await loadAllBucketStats()
+    }
   }
-})
+)
 
 // Load stats on mount if buckets are already loaded
 onMounted(async () => {
@@ -270,4 +319,11 @@ onMounted(async () => {
     await loadAllBucketStats()
   }
 })
+
+function suggestEnablePathStyle() {
+  // Open a dialog to explain and offer to edit the profile
+  alert(
+    'To enable path-style addressing:\n\n1. Click on the Edit button (pencil icon) next to your connection profile\n2. Check the "Force Path Style" checkbox\n3. Save the profile\n4. Try loading buckets again'
+  )
+}
 </script>

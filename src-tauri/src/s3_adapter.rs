@@ -55,21 +55,65 @@ impl S3Adapter {
     }
 
     /// Test connection by listing buckets
-    pub async fn test_connection(&self) -> Result<TestConnectionResponse, AppError> {
-        match self.client.list_buckets().send().await {
+    /// If connection fails and path_style is not enabled, tries again with path_style
+    pub async fn test_connection_with_profile(
+        profile: &Profile,
+    ) -> Result<TestConnectionResponse, AppError> {
+        let adapter = Self::from_profile(profile).await?;
+
+        match adapter.client.list_buckets().send().await {
             Ok(output) => {
                 let bucket_count = output.buckets().len();
                 Ok(TestConnectionResponse {
                     success: true,
                     message: format!("Successfully connected. Found {} buckets.", bucket_count),
                     bucket_count: Some(bucket_count),
+                    suggest_path_style: None,
                 })
             }
-            Err(e) => Ok(TestConnectionResponse {
-                success: false,
-                message: format!("Connection failed: {}", e),
-                bucket_count: None,
-            }),
+            Err(e) => {
+                let error_str = e.to_string();
+
+                // If path_style is not enabled and we have a custom endpoint, try with path_style
+                if !profile.path_style && profile.endpoint.is_some() {
+                    // Create a modified profile with path_style enabled
+                    let mut path_style_profile = profile.clone();
+                    path_style_profile.path_style = true;
+
+                    // Try again with path_style enabled
+                    let path_style_adapter = Self::from_profile(&path_style_profile).await?;
+
+                    match path_style_adapter.client.list_buckets().send().await {
+                        Ok(output) => {
+                            // Success with path_style! Suggest enabling it
+                            let bucket_count = output.buckets().len();
+                            Ok(TestConnectionResponse {
+                                success: false,
+                                message: format!("Connection failed without path-style, but succeeded with path-style enabled. Found {} buckets. Please enable 'Force Path Style' option.", bucket_count),
+                                bucket_count: Some(bucket_count),
+                                suggest_path_style: Some(true),
+                            })
+                        }
+                        Err(_) => {
+                            // Failed with both, return original error
+                            Ok(TestConnectionResponse {
+                                success: false,
+                                message: format!("Connection failed: {}", error_str),
+                                bucket_count: None,
+                                suggest_path_style: None,
+                            })
+                        }
+                    }
+                } else {
+                    // No retry, just return the error
+                    Ok(TestConnectionResponse {
+                        success: false,
+                        message: format!("Connection failed: {}", error_str),
+                        bucket_count: None,
+                        suggest_path_style: None,
+                    })
+                }
+            }
         }
     }
 
@@ -175,6 +219,53 @@ impl S3Adapter {
         }
 
         Ok((total_size, total_count))
+    }
+
+    /// Calculate folder size by listing ALL objects with the given prefix (including all subdirectories recursively)
+    /// This method skips folder markers (objects ending with '/') as they are zero-byte placeholders
+    pub async fn calculate_folder_size(
+        &self,
+        bucket_name: &str,
+        prefix: &str,
+    ) -> Result<i64, AppError> {
+        let mut total_size: i64 = 0;
+        let mut continuation_token: Option<String> = None;
+
+        // Paginate through ALL objects with the given prefix (no delimiter = recursive)
+        loop {
+            let mut request = self
+                .client
+                .list_objects_v2()
+                .bucket(bucket_name)
+                .prefix(prefix)
+                .max_keys(1000);
+
+            if let Some(token) = continuation_token {
+                request = request.continuation_token(token);
+            }
+
+            let output = request
+                .send()
+                .await
+                .map_err(|e| AppError::S3Error(format!("Failed to list objects: {}", e)))?;
+
+            // Sum up object sizes (skip folder markers)
+            for obj in output.contents() {
+                if let Some(key) = obj.key() {
+                    if !key.ends_with('/') {
+                        total_size += obj.size().unwrap_or(0);
+                    }
+                }
+            }
+
+            // Check if there are more pages
+            continuation_token = output.next_continuation_token().map(|s| s.to_string());
+            if continuation_token.is_none() {
+                break;
+            }
+        }
+
+        Ok(total_size)
     }
 
     /// List objects in a bucket with optional prefix
@@ -325,6 +416,29 @@ impl S3Adapter {
             .send()
             .await
             .map_err(|e| AppError::S3Error(format!("Failed to copy object: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Change the content-type of an object by copying it to itself with new metadata
+    pub async fn change_content_type(
+        &self,
+        bucket: &str,
+        key: &str,
+        new_content_type: &str,
+    ) -> Result<(), AppError> {
+        let copy_source = format!("{}/{}", bucket, key);
+
+        self.client
+            .copy_object()
+            .copy_source(&copy_source)
+            .bucket(bucket)
+            .key(key)
+            .content_type(new_content_type)
+            .metadata_directive(aws_sdk_s3::types::MetadataDirective::Replace)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to change content-type: {}", e)))?;
 
         Ok(())
     }
