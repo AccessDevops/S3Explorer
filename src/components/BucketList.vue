@@ -151,6 +151,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { createBucket, getBucketAcl, calculateBucketStats } from '../services/tauri'
+import { formatSize, formatDate } from '../utils/formatters'
+import { logger } from '../utils/logger'
 
 const appStore = useAppStore()
 const { t } = useI18n()
@@ -252,7 +254,7 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
       timestamp: now,
     }
   } catch (e) {
-    console.error(`Failed to load stats for bucket ${bucketName}:`, e)
+    logger.error(`Failed to load stats for bucket ${bucketName}`, e)
   } finally {
     loadingStats.value[bucketName] = false
   }
@@ -265,42 +267,47 @@ async function loadBucketAcl(bucketName: string) {
     const acl = await getBucketAcl(appStore.currentProfile.id, bucketName)
     bucketAcls.value[bucketName] = acl
   } catch (e) {
-    console.error(`Failed to load ACL for bucket ${bucketName}:`, e)
+    logger.error(`Failed to load ACL for bucket ${bucketName}`, e)
     // Don't set ACL if we can't read it (permission issue)
   }
+}
+
+// Simple concurrency limiter to avoid overwhelming S3 API
+async function runWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = []
+  const executing: Promise<void>[] = []
+
+  for (const task of tasks) {
+    const promise = task().then((result) => {
+      results.push(result)
+      executing.splice(executing.indexOf(promise), 1)
+    })
+
+    executing.push(promise)
+
+    if (executing.length >= limit) {
+      await Promise.race(executing)
+    }
+  }
+
+  await Promise.all(executing)
+  return results
 }
 
 async function loadAllBucketStats(forceRefresh = false) {
   if (!appStore.currentProfile) return
 
-  // Load stats and ACLs for all buckets in parallel
-  await Promise.all(
-    appStore.buckets.flatMap((bucket) => [
-      loadBucketStats(bucket.name, forceRefresh),
-      loadBucketAcl(bucket.name),
-    ])
-  )
-}
+  // Load stats and ACLs for all buckets with concurrency limit of 5
+  // This prevents overwhelming the S3 API with too many concurrent requests
+  const tasks = appStore.buckets.flatMap((bucket) => [
+    () => loadBucketStats(bucket.name, forceRefresh),
+    () => loadBucketAcl(bucket.name),
+  ])
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatDate(dateString: string): string {
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  } catch {
-    return dateString
-  }
+  await runWithConcurrencyLimit(tasks, 5)
 }
 
 // Watch for changes in buckets list

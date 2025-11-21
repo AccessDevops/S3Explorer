@@ -159,3 +159,22 @@ pub struct ObjectVersion {
 pub struct ListObjectVersionsResponse {
     pub versions: Vec<ObjectVersion>,
 }
+
+/// Response from initiating multipart upload
+#[derive(Debug, Serialize)]
+pub struct MultipartUploadInitResponse {
+    pub upload_id: String,
+}
+
+/// Completed part information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletedPart {
+    pub part_number: i32,
+    pub e_tag: String,
+}
+
+/// Response from uploading a part
+#[derive(Debug, Serialize)]
+pub struct MultipartUploadPartResponse {
+    pub e_tag: String,
+}

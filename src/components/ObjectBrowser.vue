@@ -104,13 +104,50 @@
             <circle cx="12" cy="12" r="3" />
           </svg>
         </button>
+
+        <!-- Search progress bar -->
+        <div
+          v-if="isSearching && searchQuery.trim()"
+          class="absolute top-full left-0 right-0 mt-1 bg-card border rounded-md shadow-sm overflow-hidden z-10"
+        >
+          <div class="flex items-center justify-between px-3 py-2 text-sm">
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
+                <span class="text-muted-foreground">{{ t('searching') }}...</span>
+                <span class="font-medium text-primary">{{ searchProgress }} {{ t('found') }}</span>
+              </div>
+              <div class="text-xs text-muted-foreground">
+                {{ t('pagesScanned', searchPagesScanned) }}
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" @click="stopSearch" :title="t('stopSearch')">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+              </svg>
+            </Button>
+          </div>
+          <!-- Animated progress bar -->
+          <div class="h-1 bg-muted overflow-hidden">
+            <div class="h-full bg-primary animate-progress-indeterminate"></div>
+          </div>
+        </div>
       </div>
 
       <div class="flex gap-2 flex-shrink-0">
         <Button size="sm" variant="outline" @click="showUploadModal = true">{{
           t('upload')
         }}</Button>
-        <Button size="sm" variant="outline" @click="showCreateFolderModal = true">{{
+        <Button size="sm" variant="outline" @click="modals.createFolder = true">{{
           t('newFolder')
         }}</Button>
         <Button size="sm" variant="ghost" @click="appStore.loadObjects()" :title="t('refresh')"
@@ -206,7 +243,7 @@
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
           </button>
-          <div class="w-28"></div>
+          <div class="w-20"></div>
           <!-- Actions space -->
         </div>
 
@@ -215,7 +252,9 @@
           v-for="(folder, index) in filteredFolders"
           :key="folder"
           :class="[
-            'flex items-center gap-3 p-3 rounded-md hover:bg-accent transition-colors cursor-pointer group select-none relative z-0',
+            'flex items-center rounded-md hover:bg-accent transition-colors cursor-pointer group select-none relative z-0',
+            rowPadding,
+            rowGap,
             selectedItems.has(folder) ? 'bg-primary/20 hover:bg-primary/30' : '',
             isDraggingFile && draggingFolder === folder ? 'opacity-50' : '',
           ]"
@@ -228,18 +267,21 @@
           @dragstart="handleFolderDragStart($event, folder)"
           @dragend="handleFolderDragEnd($event, folder)"
         >
+          <!-- Spacer to align with file version arrow -->
+          <div class="flex-shrink-0 w-4"></div>
+
           <div class="flex-shrink-0">
-            <PhFolder :size="24" class="text-yellow-500" weight="duotone" />
+            <PhFolder :size="iconSize" class="text-yellow-500" weight="duotone" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="font-medium truncate">{{ getFolderName(folder) }}</div>
+            <div class="font-medium truncate" :class="textSize">{{ getFolderName(folder) }}</div>
           </div>
           <div class="text-sm text-muted-foreground w-24 text-right">
             {{ getFolderSize(folder) }}
           </div>
           <div class="text-sm text-muted-foreground w-40 text-right">-</div>
           <div
-            class="flex gap-1 transition-opacity w-28 justify-end"
+            class="flex gap-1 transition-opacity w-20 justify-end"
             :class="selectedItems.has(folder) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
           >
             <Button
@@ -254,68 +296,231 @@
         </div>
 
         <!-- Files -->
-        <div
-          v-for="(obj, index) in filteredObjects"
-          :key="obj.key"
-          :class="[
-            'flex items-center gap-3 p-3 rounded-md hover:bg-accent transition-colors group cursor-pointer select-none relative z-0',
-            selectedItems.has(obj.key) ? 'bg-primary/20 hover:bg-primary/30' : '',
-            isDraggingFile && draggingObject?.key === obj.key ? 'opacity-50' : '',
-          ]"
-          :draggable="true"
-          data-object-row
-          :data-object-key="obj.key"
-          @click="handleFileClick($event, obj, index + filteredFolders.length)"
-          @dblclick="viewObject(obj)"
-          @contextmenu.stop="showContextMenu($event, obj)"
-          @dragstart="handleFileDragStart($event, obj)"
-          @dragend="handleFileDragEnd($event, obj)"
-        >
-          <div class="flex-shrink-0">
-            <component :is="getFileIcon(obj.key).icon" :size="24" :class="getFileIcon(obj.key).colorClass" weight="duotone" />
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="font-medium truncate">
-              {{ searchQuery.trim() ? obj.key : getFileName(obj.key) }}
+        <template v-for="(obj, index) in filteredObjects" :key="obj.key">
+          <div
+            :class="[
+              'flex items-center rounded-md hover:bg-accent transition-colors group cursor-pointer select-none relative',
+              showActionsMenu === obj.key ? 'z-[10000]' : 'z-0',
+              rowPadding,
+              rowGap,
+              selectedItems.has(obj.key) ? 'bg-primary/20 hover:bg-primary/30' : '',
+              isDraggingFile && draggingObject?.key === obj.key ? 'opacity-50' : '',
+            ]"
+            :draggable="true"
+            data-object-row
+            :data-object-key="obj.key"
+            @click="handleFileClick($event, obj, index + filteredFolders.length)"
+            @dblclick="viewObject(obj)"
+            @contextmenu.stop="showContextMenu($event, obj)"
+            @dragstart="handleFileDragStart($event, obj)"
+            @dragend="handleFileDragEnd($event, obj)"
+          >
+            <!-- Version expand/collapse arrow -->
+            <button
+              @click.stop="toggleInlineVersions(obj, $event)"
+              :class="[
+                'flex-shrink-0 hover:bg-accent rounded transition-opacity',
+                expandedVersions.has(obj.key) || loadingInlineVersions.has(obj.key) || hasMultipleVersions(obj) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              ]"
+              :title="expandedVersions.has(obj.key) ? t('hideVersions') : t('showVersions')"
+            >
+              <PhCaretDown
+                v-if="expandedVersions.has(obj.key)"
+                :size="16"
+                :class="hasMultipleVersions(obj) ? 'text-blue-500' : 'text-muted-foreground'"
+              />
+              <PhCaretRight
+                v-else-if="!loadingInlineVersions.has(obj.key)"
+                :size="16"
+                :class="hasMultipleVersions(obj) ? 'text-blue-500' : 'text-muted-foreground'"
+              />
+              <svg
+                v-else
+                class="animate-spin text-muted-foreground"
+                :width="16"
+                :height="16"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            </button>
+
+            <div class="flex-shrink-0">
+              <component :is="getFileIcon(obj.key).icon" :size="iconSize" :class="getFileIcon(obj.key).colorClass" weight="duotone" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate" :class="textSize">
+                {{ searchQuery.trim() ? obj.key : getFileName(obj.key) }}
+              </div>
+              <div
+                v-if="searchQuery.trim() && obj.key.includes('/')"
+                class="text-xs text-muted-foreground truncate"
+              >
+                {{ obj.key.substring(0, obj.key.lastIndexOf('/')) }}/
+              </div>
+            </div>
+            <div class="text-sm text-muted-foreground w-24 flex-shrink-0 text-right tabular-nums">
+              {{ formatSize(obj.size) }}
+            </div>
+            <div class="text-sm text-muted-foreground w-40 flex-shrink-0 text-right tabular-nums">
+              {{ formatDate(obj.last_modified) }}
             </div>
             <div
-              v-if="searchQuery.trim() && obj.key.includes('/')"
-              class="text-xs text-muted-foreground truncate"
+              class="flex gap-1 transition-opacity w-20 flex-shrink-0 justify-end"
+              :class="selectedItems.has(obj.key) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
             >
-              {{ obj.key.substring(0, obj.key.lastIndexOf('/')) }}/
+              <!-- Actions menu button -->
+              <div class="relative" @mouseleave="showActionsMenu = null">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  @click.stop="showActionsMenu = showActionsMenu === obj.key ? null : obj.key"
+                  @mouseenter="showActionsMenu = obj.key"
+                >
+                  <PhDotsThree :size="16" weight="bold" />
+                </Button>
+
+                <!-- Actions dropdown menu -->
+                <Transition name="fade">
+                  <div
+                    v-if="showActionsMenu === obj.key"
+                    @click.stop
+                    class="absolute right-full top-0 z-[9999]"
+                  >
+                    <div class="min-w-[160px] rounded-md border bg-card backdrop-blur-sm p-0.5 text-card-foreground shadow-xl">
+                      <!-- Download -->
+                      <button
+                        @click="downloadObject(obj.key)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                      >
+                        <PhDownloadSimple :size="14" />
+                        {{ t('download') }}
+                      </button>
+
+                      <!-- View -->
+                      <button
+                        @click="viewObject(obj)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                      >
+                        <PhEye :size="14" />
+                        {{ t('view') }}
+                      </button>
+
+                      <!-- Divider -->
+                      <div class="my-0.5 h-px bg-border"></div>
+
+                      <!-- Copy options -->
+                      <button
+                        @click="copyFullPath(obj.key)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                      >
+                        <PhLink :size="14" />
+                        {{ t('copyFullPath') }}
+                      </button>
+                      <button
+                        @click="copyPath(obj.key)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                      >
+                        <PhLink :size="14" />
+                        {{ t('copyPath') }}
+                      </button>
+                      <button
+                        @click="copyFileName(obj.key)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                      >
+                        <PhLink :size="14" />
+                        {{ t('copyFileName') }}
+                      </button>
+                      <button
+                        @click="copyObjectUrl(obj.key)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                      >
+                        <PhLink :size="14" />
+                        {{ t('copyUrl') }}
+                      </button>
+
+                      <!-- Divider -->
+                      <div class="my-0.5 h-px bg-border"></div>
+
+                      <!-- Delete -->
+                      <button
+                        @click="deleteObjectConfirm(obj.key)"
+                        class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-destructive hover:text-destructive-foreground text-left"
+                      >
+                        <PhTrash :size="14" />
+                        {{ t('delete') }}
+                      </button>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
             </div>
           </div>
-          <div class="text-sm text-muted-foreground w-24 text-right">
-            {{ formatSize(obj.size) }}
-          </div>
-          <div class="text-sm text-muted-foreground w-40 text-right">
-            {{ formatDate(obj.last_modified) }}
-          </div>
+
+          <!-- Versions list (expanded inline) -->
           <div
-            class="flex gap-1 transition-opacity w-28 justify-end"
-            :class="selectedItems.has(obj.key) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+            v-if="expandedVersions.has(obj.key) && inlineVersions.has(obj.key)"
+            class="ml-8 border-l-2 border-muted"
           >
-            <Button
-              size="sm"
-              variant="secondary"
-              @click.stop="downloadObject(obj.key)"
-              :title="t('download')"
+            <div
+              v-for="version in inlineVersions.get(obj.key)"
+              :key="version.version_id"
+              :class="[
+                'flex items-center hover:bg-accent/50 transition-colors group select-none',
+                rowPadding,
+                rowGap,
+                'ml-4'
+              ]"
             >
-              <PhDownloadSimple :size="16" />
-            </Button>
-            <Button size="sm" variant="secondary" @click.stop="viewObject(obj)" :title="t('view')">
-              <PhEye :size="16" />
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              @click.stop="deleteObjectConfirm(obj.key)"
-              :title="t('delete')"
-            >
-              <PhTrash :size="16" />
-            </Button>
+              <div class="flex-shrink-0 w-4"></div>
+              <div class="flex-shrink-0">
+                <PhClock :size="iconSize" class="text-muted-foreground" weight="duotone" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium truncate" :class="textSize">
+                  {{ version.version_id.substring(0, 12) }}...
+                  <span
+                    v-if="version.is_latest"
+                    class="ml-2 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded"
+                  >
+                    {{ t('latest') }}
+                  </span>
+                </div>
+                <div class="text-xs text-muted-foreground truncate">
+                  {{ formatDate(version.last_modified) }}
+                </div>
+              </div>
+              <div class="text-sm text-muted-foreground w-24 flex-shrink-0 text-right tabular-nums">
+                {{ formatSize(version.size) }}
+              </div>
+              <div class="w-40 flex-shrink-0"></div>
+              <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity w-36 flex-shrink-0 justify-end">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  @click.stop="downloadObjectVersion(version)"
+                  :title="t('download')"
+                >
+                  <PhDownloadSimple :size="16" />
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
+        </template>
 
         <!-- Empty State Hint (Background) -->
         <div
@@ -502,39 +707,61 @@
     <Dialog v-model:open="showUploadModal">
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{{ t('uploadFile') }}</DialogTitle>
+          <DialogTitle>{{ t('upload') }}</DialogTitle>
         </DialogHeader>
-        <input type="file" @change="handleFileSelect" class="mb-4" />
-        <div v-if="uploadFile" class="p-3 bg-muted rounded-md mb-4">
-          <p class="text-sm">
-            <strong>{{ t('selectedFile') }}:</strong> {{ uploadFile.name }}
-          </p>
-          <p class="text-sm text-muted-foreground">
-            <strong>{{ t('size') }}:</strong> {{ formatSize(uploadFile.size) }}
-          </p>
+        <input type="file" multiple @change="handleFileSelect" class="mb-4" />
+        <div v-if="uploadFiles.length > 0" class="space-y-2 max-h-64 overflow-y-auto mb-4">
+          <div
+            v-for="(file, index) in uploadFiles"
+            :key="index"
+            class="p-3 bg-muted rounded-md flex items-center justify-between"
+          >
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate" :title="file.name">{{ file.name }}</p>
+              <p class="text-xs text-muted-foreground">{{ formatSize(file.size) }}</p>
+            </div>
+            <button
+              @click="removeFile(index)"
+              class="ml-2 text-destructive hover:bg-destructive/10 rounded px-2 py-1"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         <DialogFooter>
-          <Button @click="uploadFileHandler" :disabled="!uploadFile">{{ t('upload') }}</Button>
+          <Button @click="uploadFilesHandler" :disabled="uploadFiles.length === 0">{{
+            t('upload')
+          }}</Button>
           <Button variant="secondary" @click="showUploadModal = false">{{ t('cancel') }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
     <!-- Create Folder Modal -->
-    <Dialog v-model:open="showCreateFolderModal">
+    <Dialog v-model:open="modals.createFolder">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{{ t('createFolder') }}</DialogTitle>
         </DialogHeader>
-        <Input
-          v-model="newFolderName"
-          :placeholder="t('folderName')"
-          @keyup.enter="createFolderHandler"
-          class="mb-4"
-        />
+        <div class="space-y-2">
+          <Input
+            v-model="folderCreation.name"
+            :placeholder="t('folderName')"
+            @keyup.enter="createFolderHandler"
+            :class="folderCreation.validationError ? 'border-red-500' : ''"
+          />
+          <p v-if="folderCreation.validationError" class="text-xs text-red-600">
+            {{ folderCreation.validationError }}
+          </p>
+        </div>
         <DialogFooter>
-          <Button @click="createFolderHandler">{{ t('create') }}</Button>
-          <Button variant="secondary" @click="showCreateFolderModal = false">{{
+          <Button
+            @click="createFolderHandler"
+            :disabled="!folderCreation.name.trim() || !!folderCreation.validationError"
+          >
+            {{ t('create') }}
+          </Button>
+          <Button variant="secondary" @click="modals.createFolder = false">{{
             t('cancel')
           }}</Button>
         </DialogFooter>
@@ -697,147 +924,95 @@
       </DialogContent>
     </Dialog>
 
-    <!-- Context Menu (File) -->
-    <div
-      v-if="contextMenu.show"
-      :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
-      class="fixed z-50 min-w-[180px] bg-popover text-popover-foreground rounded-md border shadow-md p-1"
-      @click="closeContextMenu"
-    >
-      <button
-        @click="copyFile"
-        class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center gap-2"
-      >
-        <PhClipboard :size="16" /> {{ t('copy') }}
-      </button>
-      <button
-        @click="startRename"
-        class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center gap-2"
-      >
-        <PhPencilSimple :size="16" /> {{ t('rename') }}
-      </button>
-      <button
-        @click="viewObjectVersions"
-        class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center gap-2"
-      >
-        <PhStack :size="16" /> {{ t('viewVersions') }}
-      </button>
-      <div class="relative">
-        <button
-          @click.stop="showContentTypeSubmenu = !showContentTypeSubmenu"
-          @mouseenter="showContentTypeSubmenu = true"
-          class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center justify-between"
-        >
-          <span class="flex items-center gap-2"><PhTag :size="16" /> {{ t('changeContentType') }}</span>
-          <PhCaretRight :size="12" />
-        </button>
-
-        <!-- Content Type Submenu -->
-        <div
-          v-if="showContentTypeSubmenu"
-          @click.stop
-          @mouseleave="showContentTypeSubmenu = false"
-          class="absolute left-full top-0 ml-1 min-w-[280px] max-h-[400px] overflow-y-auto bg-popover text-popover-foreground rounded-md border shadow-md p-1 z-50"
-        >
-          <button
-            v-for="(type, index) in commonContentTypes"
-            :key="index"
-            @click="changeContentTypeDirectly(type.value)"
-            :class="[
-              'w-full text-left px-3 py-2 text-xs rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer',
-              type.isRecommended ? 'font-bold border-b border-border mb-1' : '',
-            ]"
-          >
-            {{ type.label }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Context Menu (Empty Area) -->
-    <div
-      v-if="emptyContextMenu.show"
-      :style="{ top: emptyContextMenu.y + 'px', left: emptyContextMenu.x + 'px' }"
-      class="fixed z-50 min-w-[180px] bg-popover text-popover-foreground rounded-md border shadow-md p-1"
-      @click="closeEmptyContextMenu"
-    >
-      <button
-        v-if="copiedFile"
-        @click="pasteFile"
-        class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center gap-2"
-      >
-        <PhClipboard :size="16" /> {{ t('paste') }} "{{ getFileName(copiedFile.key) }}"
-      </button>
-      <div v-if="copiedFile" class="h-px bg-border my-1"></div>
-      <button
-        @click="openCreateFileModal"
-        class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center gap-2"
-      >
-        <PhFilePlus :size="16" /> {{ t('newFile') }}
-      </button>
-      <button
-        @click="openCreateFolderModalFromContext"
-        class="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center gap-2"
-      >
-        <PhFolderPlus :size="16" /> {{ t('newFolder') }}
-      </button>
-    </div>
+    <!-- Context Menus -->
+    <ContextMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :target-object="contextMenu.object"
+      :show-empty="emptyContextMenu.show"
+      :empty-x="emptyContextMenu.x"
+      :empty-y="emptyContextMenu.y"
+      :has-copied-file="!!copiedFile"
+      :icon-size="iconSize"
+      :text-size="textSize"
+      :is-compact-view="isCompactView"
+      @copy="copyFile"
+      @rename="startRename"
+      @view-versions="viewObjectVersions"
+      @change-content-type="changeContentTypeDirectly"
+      @paste="pasteFile"
+      @new-file="openCreateFileModal"
+      @new-folder="openCreateFolderModalFromContext"
+    />
 
     <!-- Rename Modal -->
-    <Dialog v-model:open="showRenameModal">
+    <Dialog v-model:open="modals.rename">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{{ t('renameFile') }}</DialogTitle>
         </DialogHeader>
         <div class="space-y-4">
-          <div>
+          <div class="space-y-2">
             <label class="text-sm font-medium">{{ t('newName') }}</label>
             <Input
-              v-model="newFileName"
+              v-model="rename.newName"
               :placeholder="t('enterNewFileName')"
-              class="mt-1"
               @keyup.enter="renameFileHandler"
+              :class="rename.validationError ? 'border-red-500' : ''"
             />
+            <p v-if="rename.validationError" class="text-xs text-red-600">
+              {{ rename.validationError }}
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="showRenameModal = false">{{ t('cancel') }}</Button>
-          <Button @click="renameFileHandler" :disabled="!newFileName.trim() || renaming">
-            {{ renaming ? t('renaming') : t('rename') }}
+          <Button variant="outline" @click="modals.rename = false">{{ t('cancel') }}</Button>
+          <Button
+            @click="renameFileHandler"
+            :disabled="!rename.newName.trim() || !!rename.validationError || rename.isRenaming"
+          >
+            {{ rename.isRenaming ? t('renaming') : t('rename') }}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
     <!-- Create File Modal -->
-    <Dialog v-model:open="showCreateFileModal">
+    <Dialog v-model:open="modals.createFile">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{{ t('createNewFile') }}</DialogTitle>
         </DialogHeader>
         <div class="space-y-4">
-          <div>
+          <div class="space-y-2">
             <label class="text-sm font-medium">{{ t('fileName') }}</label>
             <Input
-              v-model="newFileName"
+              v-model="fileCreation.name"
               placeholder="filename.txt"
-              class="mt-1"
               @keyup.enter="createFileHandler"
+              :class="fileCreation.validationError ? 'border-red-500' : ''"
             />
+            <p v-if="fileCreation.validationError" class="text-xs text-red-600">
+              {{ fileCreation.validationError }}
+            </p>
           </div>
           <div>
             <label class="text-sm font-medium">{{ t('contentOptional') }}</label>
             <textarea
-              v-model="newFileContent"
+              v-model="fileCreation.content"
               :placeholder="t('fileContentPlaceholder')"
               class="w-full min-h-[120px] p-3 text-sm font-mono border rounded-md resize-y bg-background focus:outline-none focus:ring-2 focus:ring-ring"
             ></textarea>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="showCreateFileModal = false">{{ t('cancel') }}</Button>
-          <Button @click="createFileHandler" :disabled="!newFileName.trim() || creatingFile">
-            {{ creatingFile ? t('creating') : t('create') }}
+          <Button variant="outline" @click="modals.createFile = false">{{ t('cancel') }}</Button>
+          <Button
+            @click="createFileHandler"
+            :disabled="!fileCreation.name.trim() || !!fileCreation.validationError || fileCreation.isCreating"
+          >
+            {{ fileCreation.isCreating ? t('creating') : t('create') }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -975,7 +1150,7 @@
     >
       <div
         v-if="appStore.loadingProgress.show"
-        class="absolute bottom-0 left-0 right-0 bg-primary/10 backdrop-blur-sm border-t border-primary/20"
+        class="absolute bottom-[38px] left-0 right-0 bg-primary/10 backdrop-blur-sm border-t border-primary/20"
       >
         <div class="relative h-1 bg-primary/20 overflow-hidden">
           <div
@@ -991,15 +1166,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useAppStore } from '../stores/app'
 import { useSettingsStore } from '../stores/settings'
 import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
 import { useToast } from '../composables/useToast'
 import { useSwipeBack } from '../composables/useSwipeBack'
+import { formatSize, formatDate } from '../utils/formatters'
+import { logger } from '../utils/logger'
+import { validateObjectKey } from '../utils/validators'
 import {
-  createFolder,
+  uploadLargeFile,
+  uploadLargeFileFromPath,
+  shouldUseMultipartUpload,
+  getConcurrencyForMultipleFiles,
+} from '../utils/multipartUpload'
+import { useUploadManager } from '../composables/useUploadManager'
+import {
+  createFolder as createFolderService,
   deleteObject,
   calculateFolderSize,
   deleteFolder,
@@ -1007,6 +1193,7 @@ import {
   listObjects,
   copyObject,
   listObjectVersions,
+  getFileSize,
 } from '../services/tauri'
 import { save } from '@tauri-apps/api/dialog'
 import { writeBinaryFile, readBinaryFile } from '@tauri-apps/api/fs'
@@ -1014,6 +1201,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { S3Object, ObjectVersion } from '../types'
 import ObjectViewer from './ObjectViewer.vue'
+import ContextMenu from './ContextMenu.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -1103,47 +1291,287 @@ import {
   PhTrash,
   PhDownloadSimple,
   PhEye,
-  PhClipboard,
-  PhPencilSimple,
-  PhStack,
-  PhTag,
+  PhLink,
   PhCaretRight,
   PhCaretLeft,
-  PhFilePlus,
-  PhFolderPlus,
+  PhCaretDown,
+  PhClock,
+  PhDotsThree,
 } from '@phosphor-icons/vue'
 
 const appStore = useAppStore()
 const settingsStore = useSettingsStore()
+const { viewMode } = storeToRefs(settingsStore)
 const { t } = useI18n()
 const dialog = useDialog()
 const toast = useToast()
-const showUploadModal = ref(false)
-const showCreateFolderModal = ref(false)
-const showViewModal = ref(false)
-const uploadFile = ref<File | null>(null)
-const newFolderName = ref('')
-const viewingObject = ref<S3Object | null>(null)
+const uploadManager = useUploadManager()
+
+// Grouped reactive state - Modals
+const modals = reactive({
+  upload: false,
+  createFolder: false,
+  view: false,
+  rename: false,
+  createFile: false,
+  versions: false,
+})
+
+// Grouped reactive state - Search
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const search = reactive({
+  query: '',
+  isSearching: false,
+  results: [] as S3Object[],
+  abortController: null as AbortController | null,
+  progress: 0,
+  debounceTimer: null as number | null,
+  showSettings: false,
+  settingsButtonRef: null as HTMLButtonElement | null,
+})
+
+// Grouped reactive state - Selection
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const selection = reactive({
+  selectedItems: new Set<string>(),
+  lastSelectedIndex: -1,
+  isDrawing: false,
+  box: { startX: 0, startY: 0, endX: 0, endY: 0 },
+  justFinished: false,
+})
+
+// Grouped reactive state - Drag & Drop
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const dragDrop = reactive({
+  isDraggingOver: false,
+  isDraggingFile: false,
+  draggingObject: null as S3Object | null,
+  draggingFolder: null as string | null,
+})
+
+// Grouped reactive state - Context Menus
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const contextMenus = reactive({
+  main: { show: false, x: 0, y: 0, object: null as S3Object | null },
+  empty: { show: false, x: 0, y: 0 },
+  showContentTypeSubmenu: false,
+})
+
+// Grouped reactive state - Upload
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const upload = reactive({
+  file: null as File | null,
+  progress: {
+    isUploading: false,
+    currentFile: '',
+    currentIndex: 0,
+    totalFiles: 0,
+    successCount: 0,
+    failCount: 0,
+    startTime: 0,
+    totalBytes: 0,
+    uploadedBytes: 0,
+    estimatedTimeRemaining: '',
+  },
+})
+
+// Grouped reactive state - Create Folder
+const folderCreation = reactive({
+  name: '',
+  validationError: '',
+})
+
+// Validate folder name in real-time
+watch(
+  () => folderCreation.name,
+  (value) => {
+    if (!value.trim()) {
+      folderCreation.validationError = ''
+      return
+    }
+    const result = validateObjectKey(value)
+    folderCreation.validationError = result.valid ? '' : result.error || ''
+  }
+)
+
+// Grouped reactive state - Create File
+const fileCreation = reactive({
+  name: '',
+  content: '',
+  isCreating: false,
+  validationError: '',
+})
+
+// Validate file name in real-time
+watch(
+  () => fileCreation.name,
+  (value) => {
+    if (!value.trim()) {
+      fileCreation.validationError = ''
+      return
+    }
+    const result = validateObjectKey(value)
+    fileCreation.validationError = result.valid ? '' : result.error || ''
+  }
+)
+
+// Grouped reactive state - Rename
+const rename = reactive({
+  newName: '',
+  object: null as S3Object | null,
+  isRenaming: false,
+  changingContentType: false,
+  validationError: '',
+})
+
+// Validate rename name in real-time
+watch(
+  () => rename.newName,
+  (value) => {
+    if (!value.trim()) {
+      rename.validationError = ''
+      return
+    }
+    const result = validateObjectKey(value)
+    rename.validationError = result.valid ? '' : result.error || ''
+  }
+)
+
+// Grouped reactive state - View Modal
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const viewModal = reactive({
+  object: null as S3Object | null,
+  viewerRef: null as InstanceType<typeof ObjectViewer> | null,
+  versions: [] as ObjectVersion[],
+})
+
+// Grouped reactive state - Versions
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const versions = reactive({
+  list: [] as ObjectVersion[],
+  isLoading: false,
+  object: null as S3Object | null,
+  expanded: new Set<string>(),
+  inline: new Map<string, ObjectVersion[]>(),
+  loadingInline: new Set<string>(),
+})
+
+// Grouped reactive state - Folder Sizes
+// TODO: Update all template references to use this grouped state (Session 4)
+// Renamed to avoid conflict with the ref folderSizes currently in use
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const folderSizesGrouped = reactive({
+  sizes: new Map<string, number>(),
+  loading: new Set<string>(),
+})
+
+// Grouped reactive state - Clipboard
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const clipboard = reactive({
+  copiedFile: null as S3Object | null,
+  isPasting: false,
+})
+
+// Sorting
+type SortColumn = 'name' | 'size' | 'date'
+type SortOrder = 'asc' | 'desc'
+// TODO: Update all template references to use this grouped state (Session 4)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const sorting = reactive({
+  by: 'name' as SortColumn,
+  order: 'asc' as SortOrder,
+})
+
+// Standalone refs that don't fit in groups
+const objectListRef = ref<HTMLElement | null>(null)
 const objectViewerRef = ref<InstanceType<typeof ObjectViewer> | null>(null)
-const folderSizes = ref<Map<string, number>>(new Map())
-const loadingFolderSizes = ref<Set<string>>(new Set())
-const isDraggingOver = ref(false)
+const uploadFiles = ref<File[]>([])
+const pasting = ref(false)
+
+// Context menu refs (will be migrated to contextMenus grouped state)
+const contextMenu = ref<{ show: boolean; x: number; y: number; object: S3Object | null }>({
+  show: false,
+  x: 0,
+  y: 0,
+  object: null,
+})
+const emptyContextMenu = ref<{ show: boolean; x: number; y: number }>({
+  show: false,
+  x: 0,
+  y: 0,
+})
+
+// Search refs (will be migrated to search grouped state)
 const searchQuery = ref('')
 const isSearching = ref(false)
-const globalSearchResults = ref<S3Object[]>([])
+const searchProgress = ref(0)
+const searchPagesScanned = ref(0)
 const searchAbortController = ref<AbortController | null>(null)
-const searchToastId = ref<string | null>(null)
-const searchDebounceTimer = ref<number | null>(null)
 const showSearchSettings = ref(false)
 const searchSettingsButtonRef = ref<HTMLButtonElement | null>(null)
+const globalSearchResults = ref<S3Object[]>([])
+const searchDebounceTimer = ref<number | null>(null)
+
+// Selection refs (will be migrated to selection grouped state)
+const selectedItems = ref(new Set<string>())
+const lastSelectedIndex = ref(-1)
+const isDrawingSelection = ref(false)
+const selectionBox = ref({ startX: 0, startY: 0, endX: 0, endY: 0 })
+const justFinishedSelection = ref(false)
+
+// Drag and drop refs (will be migrated to dragDrop grouped state)
+const isDraggingOver = ref(false)
 const isDraggingFile = ref(false)
 const draggingObject = ref<S3Object | null>(null)
 const draggingFolder = ref<string | null>(null)
-const contextMenu = ref({ show: false, x: 0, y: 0, object: null as S3Object | null })
-const isDrawingSelection = ref(false)
-const selectionBox = ref({ startX: 0, startY: 0, endX: 0, endY: 0 })
-const objectListRef = ref<HTMLElement | null>(null)
-const justFinishedSelection = ref(false)
+
+// View modal refs (will be migrated to viewModal grouped state)
+const viewingObject = ref<S3Object | null>(null)
+const showViewModal = ref(false)
+const viewModalVersions = ref<ObjectVersion[]>([])
+
+// Versions refs (will be migrated to versions grouped state)
+const objectVersions = ref<ObjectVersion[]>([])
+const versionsObject = ref<S3Object | null>(null)
+const showVersionsModal = ref(false)
+const loadingVersions = ref(false)
+const expandedVersions = ref(new Set<string>())
+const inlineVersions = ref(new Map<string, ObjectVersion[]>())
+const loadingInlineVersions = ref(new Set<string>())
+
+// Folder size refs (will be migrated to folderSizes grouped state)
+const folderSizes = ref(new Map<string, number>())
+const loadingFolderSizes = ref(new Set<string>())
+
+// Clipboard refs (will be migrated to clipboard grouped state)
+const copiedFile = ref<S3Object | null>(null)
+
+// Sorting refs (will be migrated to sorting grouped state)
+const sortBy = ref<SortColumn>('name')
+const sortOrder = ref<SortOrder>('asc')
+
+// Modal refs (already using modals grouped state, but some legacy refs)
+const showUploadModal = ref(false)
+const showRenameModal = ref(false)
+
+// Rename refs (already using rename grouped state)
+const renamingObject = ref<S3Object | null>(null)
+const newFileName = ref('')
+
+// Content type changing ref
+const changingContentType = ref(false)
+
+// Actions menu ref - tracks which object's actions menu is open
+const showActionsMenu = ref<string | null>(null)
+const showCopySubmenu = ref<string | null>(null)
 
 // Setup swipe back gesture
 useSwipeBack(objectListRef, () => {
@@ -1154,31 +1582,13 @@ useSwipeBack(objectListRef, () => {
   threshold: 50,
   velocityThreshold: 0.3
 })
-const showRenameModal = ref(false)
-const newFileName = ref('')
-const renamingObject = ref<S3Object | null>(null)
-const renaming = ref(false)
-const showContentTypeSubmenu = ref(false)
-const changingContentType = ref(false)
-const emptyContextMenu = ref({ show: false, x: 0, y: 0 })
-const showCreateFileModal = ref(false)
-const newFileContent = ref('')
-const creatingFile = ref(false)
-const copiedFile = ref<S3Object | null>(null)
-const pasting = ref(false)
-const selectedItems = ref<Set<string>>(new Set())
-const lastSelectedIndex = ref<number>(-1)
-const showVersionsModal = ref(false)
-const objectVersions = ref<ObjectVersion[]>([])
-const loadingVersions = ref(false)
-const versionsObject = ref<S3Object | null>(null)
-const viewModalVersions = ref<ObjectVersion[]>([])
 
-// Sorting
-type SortColumn = 'name' | 'size' | 'date'
-type SortOrder = 'asc' | 'desc'
-const sortBy = ref<SortColumn>('name')
-const sortOrder = ref<SortOrder>('asc')
+// View mode computed properties
+const isCompactView = computed(() => viewMode.value === 'compact')
+const rowPadding = computed(() => (isCompactView.value ? 'p-0.5' : 'p-1.5'))
+const rowGap = computed(() => (isCompactView.value ? 'gap-0.5' : 'gap-1.5'))
+const iconSize = computed(() => (isCompactView.value ? 16 : 18))
+const textSize = computed(() => 'text-xs')
 
 // Upload progress tracking
 const uploadProgress = ref({
@@ -1201,68 +1611,6 @@ let unlistenFileDropCancelled: UnlistenFn | null = null
 const pathParts = computed(() => {
   if (!appStore.currentPrefix) return []
   return appStore.currentPrefix.split('/').filter((p) => p)
-})
-
-// Common content types list
-const commonContentTypes = computed(() => {
-  if (!contextMenu.value.object) return []
-
-  const fileName = getFileName(contextMenu.value.object.key)
-  const recommended = getContentTypeFromExtension(fileName)
-
-  const types = [
-    // Recommended (will be styled differently)
-    { value: recommended, label: `${recommended} (recommandé)`, isRecommended: true },
-
-    // Images
-    { value: 'image/jpeg', label: 'image/jpeg', category: 'Images' },
-    { value: 'image/png', label: 'image/png', category: 'Images' },
-    { value: 'image/gif', label: 'image/gif', category: 'Images' },
-    { value: 'image/webp', label: 'image/webp', category: 'Images' },
-    { value: 'image/svg+xml', label: 'image/svg+xml', category: 'Images' },
-
-    // Documents
-    { value: 'application/pdf', label: 'application/pdf', category: 'Documents' },
-    { value: 'application/msword', label: 'application/msword', category: 'Documents' },
-    {
-      value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      label: 'application/vnd...docx',
-      category: 'Documents',
-    },
-    { value: 'application/vnd.ms-excel', label: 'application/vnd.ms-excel', category: 'Documents' },
-    {
-      value: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      label: 'application/vnd...xlsx',
-      category: 'Documents',
-    },
-
-    // Text
-    { value: 'text/plain', label: 'text/plain', category: 'Text' },
-    { value: 'text/html', label: 'text/html', category: 'Text' },
-    { value: 'text/css', label: 'text/css', category: 'Text' },
-    { value: 'text/javascript', label: 'text/javascript', category: 'Text' },
-
-    // Application
-    { value: 'application/json', label: 'application/json', category: 'Application' },
-    { value: 'application/xml', label: 'application/xml', category: 'Application' },
-    { value: 'application/zip', label: 'application/zip', category: 'Application' },
-    {
-      value: 'application/octet-stream',
-      label: 'application/octet-stream',
-      category: 'Application',
-    },
-
-    // Video
-    { value: 'video/mp4', label: 'video/mp4', category: 'Video' },
-    { value: 'video/webm', label: 'video/webm', category: 'Video' },
-
-    // Audio
-    { value: 'audio/mpeg', label: 'audio/mpeg', category: 'Audio' },
-    { value: 'audio/wav', label: 'audio/wav', category: 'Audio' },
-  ]
-
-  // Remove duplicates (if recommended is already in the list)
-  return types.filter((type, index) => index === 0 || type.value !== recommended)
 })
 
 const displayPathParts = computed(() => {
@@ -1424,7 +1772,7 @@ watch(
         )
         folderSizes.value.set(folder, size)
       } catch (e) {
-        console.error(`Failed to calculate size for ${folder}:`, e)
+        logger.error(`Failed to calculate size for ${folder}:`, e)
       } finally {
         loadingFolderSizes.value.delete(folder)
       }
@@ -1438,11 +1786,9 @@ function stopSearch() {
   if (searchAbortController.value) {
     searchAbortController.value.abort()
   }
-  if (searchToastId.value) {
-    toast.removeToast(searchToastId.value)
-    searchToastId.value = null
-  }
   isSearching.value = false
+  searchProgress.value = 0
+  searchPagesScanned.value = 0
 }
 
 // Search settings menu functions
@@ -1494,22 +1840,24 @@ watch(searchQuery, async (query) => {
     try {
       isSearching.value = true
       globalSearchResults.value = []
+      searchProgress.value = 0
+      searchPagesScanned.value = 0
       searchAbortController.value = new AbortController()
-
-      // Create toast with stop button
-      searchToastId.value = toast.loading(
-        `${t('searching')}... 0 ${t('found')}`,
-        t('stopSearch'),
-        stopSearch
-      )
 
       let continuationToken: string | undefined = undefined
       const searchPrefix = settingsStore.searchMode === 'local' ? appStore.currentPrefix : ''
+      const MAX_SEARCH_RESULTS = 10000 // Limit to prevent memory overflow
 
       // Paginate through objects
       do {
         // Check if search was aborted
         if (searchAbortController.value.signal.aborted) {
+          break
+        }
+
+        // Check if we've reached the maximum limit
+        if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
+          toast.warning(t('searchLimitReached', MAX_SEARCH_RESULTS))
           break
         }
 
@@ -1522,36 +1870,30 @@ watch(searchQuery, async (query) => {
           false // No delimiter - list all objects recursively
         )
 
-        // Append results
-        globalSearchResults.value.push(...result.objects)
+        // Increment page counter
+        searchPagesScanned.value++
 
-        // Update toast with progress
-        if (searchToastId.value) {
-          toast.updateToast(searchToastId.value, {
-            message: `${t('searching')}... ${globalSearchResults.value.length} ${t('found')}`,
-          })
+        // Append results (but don't exceed limit)
+        const remainingSlots = MAX_SEARCH_RESULTS - globalSearchResults.value.length
+        const objectsToAdd = result.objects.slice(0, remainingSlots)
+        globalSearchResults.value.push(...objectsToAdd)
+
+        // Update progress
+        searchProgress.value = globalSearchResults.value.length
+
+        // Stop if we've reached the limit
+        if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
+          break
         }
 
         // Check if there are more pages
         continuationToken = result.continuation_token
       } while (continuationToken && !searchAbortController.value.signal.aborted)
 
-      // Complete the toast
-      if (searchToastId.value && !searchAbortController.value.signal.aborted) {
-        toast.completeToast(
-          searchToastId.value,
-          `${t('found')} ${globalSearchResults.value.length} ${t('resultsFound')}`,
-          'success'
-        )
-        searchToastId.value = null
-      }
     } catch (e: any) {
       if (e.name !== 'AbortError') {
-        console.error('Search failed:', e)
-        if (searchToastId.value) {
-          toast.completeToast(searchToastId.value, 'Search failed', 'error')
-          searchToastId.value = null
-        }
+        logger.error('Search failed:', e)
+        toast.error(`${t('errorOccurred')}: ${e}`)
       }
       globalSearchResults.value = []
     } finally {
@@ -1563,11 +1905,31 @@ watch(searchQuery, async (query) => {
   }, 500) // Debounce delay
 })
 
-// Clear selection when navigating to a different folder
+// Clear selection and cached data when navigating to a different folder
 watch(
   () => appStore.currentPrefix,
   () => {
     clearSelection()
+    // Clear inline versions to free memory
+    inlineVersions.value.clear()
+    expandedVersions.value.clear()
+    // Clear search results to free memory
+    globalSearchResults.value = []
+    searchQuery.value = ''
+    isSearching.value = false
+  }
+)
+
+// Clear all cached data when switching buckets
+watch(
+  () => appStore.currentBucket,
+  () => {
+    clearSelection()
+    inlineVersions.value.clear()
+    expandedVersions.value.clear()
+    globalSearchResults.value = []
+    searchQuery.value = ''
+    isSearching.value = false
   }
 )
 
@@ -1578,79 +1940,6 @@ function getFolderSize(folder: string): string {
   const size = folderSizes.value.get(folder)
   if (size === undefined) return '-'
   return formatSize(size)
-}
-
-function getContentTypeFromExtension(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase()
-
-  const contentTypes: Record<string, string> = {
-    // Images
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    gif: 'image/gif',
-    webp: 'image/webp',
-    svg: 'image/svg+xml',
-    ico: 'image/x-icon',
-
-    // Documents
-    pdf: 'application/pdf',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xls: 'application/vnd.ms-excel',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-
-    // Text
-    txt: 'text/plain',
-    html: 'text/html',
-    htm: 'text/html',
-    css: 'text/css',
-    js: 'text/javascript',
-    json: 'application/json',
-    xml: 'application/xml',
-    csv: 'text/csv',
-
-    // Archives
-    zip: 'application/zip',
-    rar: 'application/x-rar-compressed',
-    '7z': 'application/x-7z-compressed',
-    tar: 'application/x-tar',
-    gz: 'application/gzip',
-
-    // Video
-    mp4: 'video/mp4',
-    avi: 'video/x-msvideo',
-    mov: 'video/quicktime',
-    wmv: 'video/x-ms-wmv',
-    flv: 'video/x-flv',
-    webm: 'video/webm',
-
-    // Audio
-    mp3: 'audio/mpeg',
-    wav: 'audio/wav',
-    ogg: 'audio/ogg',
-    flac: 'audio/flac',
-  }
-
-  return contentTypes[ext || ''] || 'application/octet-stream'
-}
-
-function formatTimeRemaining(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return '--'
-
-  if (seconds < 60) {
-    return `${Math.round(seconds)}s`
-  } else if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.round(seconds % 60)
-    return `${mins}m ${secs}s`
-  } else {
-    const hours = Math.floor(seconds / 3600)
-    const mins = Math.floor((seconds % 3600) / 60)
-    return `${hours}h ${mins}m`
-  }
 }
 
 function navigateToRoot() {
@@ -2024,81 +2313,124 @@ function getFileIcon(key: string): { icon: any; colorClass: string } {
   }
 }
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleString()
-}
-
 function handleFileSelect(event: Event) {
   const target = event.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    uploadFile.value = target.files[0]
+    uploadFiles.value = Array.from(target.files)
   }
 }
 
-async function uploadFileHandler() {
-  if (!uploadFile.value || !appStore.currentProfile || !appStore.currentBucket) return
+function removeFile(index: number) {
+  uploadFiles.value.splice(index, 1)
+}
 
-  const toastId = toast.loading(`${t('uploading')} ${uploadFile.value.name}`)
+async function uploadFilesHandler() {
+  if (uploadFiles.value.length === 0 || !appStore.currentProfile || !appStore.currentBucket) return
 
-  try {
-    const arrayBuffer = await uploadFile.value.arrayBuffer()
-    const bytes = Array.from(new Uint8Array(arrayBuffer))
-    const key = appStore.currentPrefix + uploadFile.value.name
+  // Close modal immediately
+  showUploadModal.value = false
 
-    // Detect content type by extension as fallback
-    const ext = uploadFile.value.name.split('.').pop()?.toLowerCase()
-    let contentType = uploadFile.value.type || undefined
+  // Helper to detect content type
+  const getContentType = (file: File): string | undefined => {
+    if (file.type) return file.type
 
-    if (!contentType && ext) {
-      if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg'
-      else if (ext === 'png') contentType = 'image/png'
-      else if (ext === 'gif') contentType = 'image/gif'
-      else if (ext === 'pdf') contentType = 'application/pdf'
-      else if (ext === 'txt') contentType = 'text/plain'
-      else if (ext === 'json') contentType = 'application/json'
-      else if (ext === 'xml') contentType = 'application/xml'
-      else if (ext === 'zip') contentType = 'application/zip'
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    if (!ext) return undefined
+
+    const contentTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      pdf: 'application/pdf',
+      txt: 'text/plain',
+      json: 'application/json',
+      xml: 'application/xml',
+      zip: 'application/zip',
     }
 
-    await putObject(appStore.currentProfile.id, appStore.currentBucket, key, bytes, contentType)
-
-    toast.completeToast(toastId, `${uploadFile.value.name} uploaded successfully!`, 'success')
-    showUploadModal.value = false
-    uploadFile.value = null
-    await appStore.loadObjects()
-  } catch (e) {
-    toast.completeToast(toastId, `${t('uploadFailed')}: ${e}`, 'error')
-    await dialog.confirm({
-      title: t('errorOccurred'),
-      message: `${t('uploadFailed')}: ${e}`,
-      confirmText: t('close'),
-      variant: 'destructive',
-    })
+    return contentTypes[ext]
   }
+
+  // Upload each file
+  for (const file of uploadFiles.value) {
+    const key = appStore.currentPrefix + file.name
+    const contentType = getContentType(file)
+    const useMultipart = shouldUseMultipartUpload(file.size)
+
+    // Create upload task
+    const uploadId = uploadManager.createUpload(file.name, file.size, useMultipart)
+    const signal = uploadManager.getSignal(uploadId)
+
+    try {
+      if (useMultipart) {
+        // Calculate concurrency limit based on active uploads
+        const activeCount = uploadManager.activeUploads.value.length
+        const concurrencyLimit = getConcurrencyForMultipleFiles(activeCount)
+
+        // Multipart upload with progress tracking and dynamic concurrency
+        await uploadLargeFile({
+          profileId: appStore.currentProfile.id,
+          bucket: appStore.currentBucket,
+          key,
+          file,
+          contentType,
+          signal,
+          concurrentUploads: concurrencyLimit,
+          onProgress: (progress) => {
+            uploadManager.updateProgress(uploadId, progress)
+          },
+        })
+      } else {
+        // Simple upload for small files
+        const arrayBuffer = await file.arrayBuffer()
+        const bytes = new Uint8Array(arrayBuffer)
+
+        await putObject(
+          appStore.currentProfile.id,
+          appStore.currentBucket,
+          key,
+          bytes,
+          contentType
+        )
+
+        // Update progress to 100%
+        uploadManager.updateProgress(uploadId, {
+          uploadedParts: 1,
+          totalParts: 1,
+          uploadedBytes: file.size,
+          totalBytes: file.size,
+          percentage: 100,
+        })
+      }
+
+      uploadManager.completeUpload(uploadId)
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e)
+      uploadManager.failUpload(uploadId, errorMessage)
+    }
+  }
+
+  // Clear file selection and reload objects
+  uploadFiles.value = []
+  await appStore.loadObjects()
 }
 
 async function createFolderHandler() {
-  if (!newFolderName.value || !appStore.currentProfile || !appStore.currentBucket) return
+  // Validate before creating
+  if (!folderCreation.name.trim() || folderCreation.validationError) return
+  if (!appStore.currentProfile || !appStore.currentBucket) return
 
-  const toastId = toast.loading(`${t('creating')} ${newFolderName.value}`)
+  const toastId = toast.loading(`${t('creating')} ${folderCreation.name}`)
 
   try {
-    const folderPath = appStore.currentPrefix + newFolderName.value
-    await createFolder(appStore.currentProfile.id, appStore.currentBucket, folderPath)
+    const folderPath = appStore.currentPrefix + folderCreation.name
+    await createFolderService(appStore.currentProfile.id, appStore.currentBucket, folderPath)
 
-    toast.completeToast(toastId, `Folder "${newFolderName.value}" created successfully!`, 'success')
-    showCreateFolderModal.value = false
-    newFolderName.value = ''
+    toast.completeToast(toastId, `Folder "${folderCreation.name}" created successfully!`, 'success')
+    modals.createFolder = false
+    folderCreation.name = ''
+    folderCreation.validationError = ''
     await appStore.loadObjects()
   } catch (e) {
     toast.completeToast(toastId, `${t('createFailed')}: ${e}`, 'error')
@@ -2134,6 +2466,85 @@ async function downloadObject(key: string) {
       confirmText: t('close'),
       variant: 'destructive',
     })
+  }
+}
+
+// Copy object URL to clipboard
+async function copyObjectUrl(key: string) {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  try {
+    const profile = appStore.currentProfile
+    const bucket = appStore.currentBucket
+
+    let fullUrl = ''
+
+    if (profile.endpoint) {
+      // Custom endpoint (MinIO, S3-compatible storage)
+      const endpoint = profile.endpoint.replace(/\/$/, '') // Remove trailing slash
+
+      if (profile.path_style) {
+        // Path-style URL: https://endpoint/bucket/key
+        fullUrl = `${endpoint}/${bucket}/${key}`
+      } else {
+        // Virtual-hosted-style URL: https://bucket.endpoint/key
+        const endpointHost = endpoint.replace(/^https?:\/\//, '')
+        const protocol = endpoint.startsWith('https') ? 'https' : 'http'
+        fullUrl = `${protocol}://${bucket}.${endpointHost}/${key}`
+      }
+    } else {
+      // AWS S3 URL format
+      if (profile.region === 'us-east-1') {
+        // Special case for us-east-1
+        fullUrl = `https://${bucket}.s3.amazonaws.com/${key}`
+      } else {
+        fullUrl = `https://${bucket}.s3.${profile.region}.amazonaws.com/${key}`
+      }
+    }
+
+    // Copy to clipboard
+    await navigator.clipboard.writeText(fullUrl)
+    showCopySubmenu.value = null
+    toast.success(t('urlCopied'))
+  } catch (e) {
+    toast.error(`${t('copyFailed')}: ${e}`)
+  }
+}
+
+// Copy full path (bucket + key) to clipboard
+async function copyFullPath(key: string) {
+  if (!appStore.currentBucket) return
+
+  try {
+    const fullPath = `${appStore.currentBucket}/${key}`
+    await navigator.clipboard.writeText(fullPath)
+    showCopySubmenu.value = null
+    toast.success(t('fullPathCopied'))
+  } catch (e) {
+    toast.error(`${t('copyFailed')}: ${e}`)
+  }
+}
+
+// Copy path (without bucket) to clipboard
+async function copyPath(key: string) {
+  try {
+    await navigator.clipboard.writeText(key)
+    showCopySubmenu.value = null
+    toast.success(t('pathCopied'))
+  } catch (e) {
+    toast.error(`${t('copyFailed')}: ${e}`)
+  }
+}
+
+// Copy file name to clipboard
+async function copyFileName(key: string) {
+  try {
+    const fileName = getFileName(key)
+    await navigator.clipboard.writeText(fileName)
+    showCopySubmenu.value = null
+    toast.success(t('fileNameCopied'))
+  } catch (e) {
+    toast.error(`${t('copyFailed')}: ${e}`)
   }
 }
 
@@ -2297,7 +2708,7 @@ async function downloadFolderDragDrop(folder: string) {
           progress,
         })
       } catch (e) {
-        console.error(`Failed to download ${obj.key}:`, e)
+        logger.error(`Failed to download ${obj.key}:`, e)
         failCount++
       }
     }
@@ -2313,7 +2724,7 @@ async function downloadFolderDragDrop(folder: string) {
       )
     }
   } catch (e) {
-    console.error('Folder download failed:', e)
+    logger.error('Folder download failed:', e)
   }
 }
 
@@ -2335,7 +2746,7 @@ async function loadViewModalVersions() {
     )
     viewModalVersions.value = response.versions
   } catch (e) {
-    console.error('Failed to load versions:', e)
+    logger.error('Failed to load versions:', e)
     viewModalVersions.value = []
   }
 }
@@ -2410,110 +2821,104 @@ async function deleteFolderConfirm(folder: string) {
 // Handle file drop using Tauri's event system
 async function handleFileDrop(paths: string[]) {
   if (!appStore.currentProfile || !appStore.currentBucket) {
-    console.error('No profile or bucket selected')
+    logger.error('No profile or bucket selected')
     return
   }
 
-  console.log(`Starting upload of ${paths.length} file(s)...`)
+  logger.debug(`Starting upload of ${paths.length} file(s) via drag & drop...`)
 
-  // Initialize progress card immediately
-  const startTime = Date.now()
-  uploadProgress.value = {
-    isUploading: true,
-    currentFile: '',
-    currentIndex: 0,
-    totalFiles: paths.length,
-    successCount: 0,
-    failCount: 0,
-    startTime,
-    totalBytes: 0, // Will be calculated as we go
-    uploadedBytes: 0,
-    estimatedTimeRemaining: '--',
-  }
+  // Helper to get content type from file name
+  const getContentType = (fileName: string): string | undefined => {
+    const ext = fileName.split('.').pop()?.toLowerCase()
+    if (!ext) return undefined
 
-  try {
-    // Get file sizes first (now happening after progress card is shown)
-    const fileSizes: number[] = []
-    let totalBytes = 0
-
-    for (const filePath of paths) {
-      try {
-        const fileData = await readBinaryFile(filePath)
-        const size = fileData.length
-        fileSizes.push(size)
-        totalBytes += size
-      } catch (e) {
-        console.error(`Failed to get size for ${filePath}:`, e)
-        fileSizes.push(0)
-      }
+    const contentTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      pdf: 'application/pdf',
+      txt: 'text/plain',
+      json: 'application/json',
+      xml: 'application/xml',
+      zip: 'application/zip',
     }
 
-    // Update total bytes after calculation
-    uploadProgress.value.totalBytes = totalBytes
+    return contentTypes[ext]
+  }
 
-    let successCount = 0
-    let failCount = 0
-    let uploadedBytes = 0
+  // Upload each dropped file
+  for (const filePath of paths) {
+    const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file'
 
-    for (let i = 0; i < paths.length; i++) {
-      const filePath = paths[i]
-      const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file'
-      const fileSize = fileSizes[i]
+    try {
+      // Get file size without reading entire file (optimized!)
+      const fileSize = await getFileSize(filePath)
+      const key = appStore.currentPrefix + fileName
+      const contentType = getContentType(fileName)
+      const useMultipart = shouldUseMultipartUpload(fileSize)
 
-      // Update progress
-      uploadProgress.value.currentFile = fileName
-      uploadProgress.value.currentIndex = i + 1
+      // Create upload task immediately after knowing the size
+      const uploadId = uploadManager.createUpload(fileName, fileSize, useMultipart)
+      const signal = uploadManager.getSignal(uploadId)
 
       try {
-        console.log(`Uploading: ${filePath}`)
-        const fileContent = await readBinaryFile(filePath)
-        const key = appStore.currentPrefix + fileName
+        if (useMultipart) {
+          // Calculate concurrency limit based on active uploads
+          const activeCount = uploadManager.activeUploads.value.length
+          const concurrencyLimit = getConcurrencyForMultipleFiles(activeCount)
 
-        const contentType = getContentTypeFromExtension(fileName)
+          // Optimized multipart upload - Rust reads file directly from disk
+          await uploadLargeFileFromPath({
+            profileId: appStore.currentProfile.id,
+            bucket: appStore.currentBucket,
+            key,
+            filePath,
+            fileSize,
+            contentType,
+            signal,
+            concurrentUploads: concurrencyLimit,
+            onProgress: (progress) => {
+              uploadManager.updateProgress(uploadId, progress)
+            },
+          })
+        } else {
+          // Simple upload for small files (read in JS is fine for <50MB)
+          const fileData = await readBinaryFile(filePath)
 
-        await putObject(
-          appStore.currentProfile.id,
-          appStore.currentBucket,
-          key,
-          Array.from(fileContent),
-          contentType
-        )
+          await putObject(
+            appStore.currentProfile.id,
+            appStore.currentBucket,
+            key,
+            fileData,
+            contentType
+          )
 
-        successCount++
-        uploadedBytes += fileSize
-        uploadProgress.value.successCount = successCount
-        uploadProgress.value.uploadedBytes = uploadedBytes
-
-        // Calculate time estimate (only if we have totalBytes calculated)
-        if (totalBytes > 0) {
-          const elapsedSeconds = (Date.now() - startTime) / 1000
-          const bytesRemaining = totalBytes - uploadedBytes
-          const bytesPerSecond = uploadedBytes / elapsedSeconds
-          const secondsRemaining = bytesRemaining / bytesPerSecond
-          uploadProgress.value.estimatedTimeRemaining = formatTimeRemaining(secondsRemaining)
+          // Update progress to 100%
+          uploadManager.updateProgress(uploadId, {
+            uploadedParts: 1,
+            totalParts: 1,
+            uploadedBytes: fileSize,
+            totalBytes: fileSize,
+            percentage: 100,
+          })
         }
 
-        console.log(`✓ Successfully uploaded: ${fileName}`)
+        uploadManager.completeUpload(uploadId)
+        logger.debug(`✓ Successfully uploaded: ${fileName}`)
       } catch (e) {
-        failCount++
-        uploadedBytes += fileSize // Count failed files too for progress calculation
-        uploadProgress.value.failCount = failCount
-        uploadProgress.value.uploadedBytes = uploadedBytes
-        console.error(`✗ Failed to upload ${filePath}:`, e)
+        const errorMessage = e instanceof Error ? e.message : String(e)
+        uploadManager.failUpload(uploadId, errorMessage)
+        logger.error(`✗ Failed to upload ${fileName}:`, e)
       }
+    } catch (e) {
+      logger.error(`✗ Failed to get file size ${filePath}:`, e)
     }
-
-    await appStore.loadObjects()
-    console.log(`Upload complete: ${successCount} succeeded, ${failCount} failed`)
-
-    // Keep progress visible for a short time to show completion
-    setTimeout(() => {
-      uploadProgress.value.isUploading = false
-    }, 1500)
-  } catch (e) {
-    console.error('Upload failed:', e)
-    uploadProgress.value.isUploading = false
   }
+
+  // Reload objects after all uploads
+  await appStore.loadObjects()
+  logger.debug(`Drag & drop upload complete`)
 }
 
 // Context menu functions
@@ -2529,7 +2934,6 @@ function showContextMenu(event: MouseEvent, obj: S3Object) {
 
 function closeContextMenu() {
   contextMenu.value.show = false
-  showContentTypeSubmenu.value = false
 }
 
 function startRename() {
@@ -2542,20 +2946,16 @@ function startRename() {
 }
 
 async function renameFileHandler() {
-  if (
-    !renamingObject.value ||
-    !newFileName.value.trim() ||
-    !appStore.currentProfile ||
-    !appStore.currentBucket
-  )
-    return
+  // Validate before renaming
+  if (!rename.newName.trim() || rename.validationError) return
+  if (!rename.object || !appStore.currentProfile || !appStore.currentBucket) return
 
   try {
-    renaming.value = true
+    rename.isRenaming = true
 
-    const oldKey = renamingObject.value.key
+    const oldKey = rename.object.key
     const path = oldKey.substring(0, oldKey.lastIndexOf('/') + 1)
-    const newKey = path + newFileName.value.trim()
+    const newKey = path + rename.newName.trim()
 
     // S3 doesn't have rename, so we copy then delete
     // First, get the object
@@ -2575,9 +2975,10 @@ async function renameFileHandler() {
     await deleteObject(appStore.currentProfile.id, appStore.currentBucket, oldKey)
 
     // Close modal and refresh
-    showRenameModal.value = false
-    newFileName.value = ''
-    renamingObject.value = null
+    modals.rename = false
+    rename.newName = ''
+    rename.object = null
+    rename.validationError = ''
     await appStore.loadObjects()
   } catch (e) {
     await dialog.confirm({
@@ -2587,7 +2988,7 @@ async function renameFileHandler() {
       variant: 'destructive',
     })
   } finally {
-    renaming.value = false
+    rename.isRenaming = false
   }
 }
 
@@ -2613,7 +3014,6 @@ async function changeContentTypeDirectly(contentType: string) {
 
     // Close menus and refresh
     closeContextMenu()
-    showContentTypeSubmenu.value = false
     await appStore.loadObjects()
 
     // Show success message
@@ -2627,6 +3027,71 @@ async function changeContentTypeDirectly(contentType: string) {
     })
   } finally {
     changingContentType.value = false
+  }
+}
+
+// Check if an object has multiple versions loaded
+function hasMultipleVersions(obj: S3Object): boolean {
+  const versions = inlineVersions.value.get(obj.key)
+  return versions !== undefined && versions.length > 1
+}
+
+// Toggle inline version expansion for a file
+async function toggleInlineVersions(obj: S3Object, event?: Event) {
+  if (event) {
+    event.stopPropagation()
+  }
+
+  const key = obj.key
+
+  // If already expanded, collapse it
+  if (expandedVersions.value.has(key)) {
+    expandedVersions.value.delete(key)
+    expandedVersions.value = new Set(expandedVersions.value) // Trigger reactivity
+    return
+  }
+
+  // If not expanded, expand and load versions if not already loaded
+  expandedVersions.value.add(key)
+  expandedVersions.value = new Set(expandedVersions.value) // Trigger reactivity
+
+  // If versions are already loaded, no need to fetch again
+  if (inlineVersions.value.has(key)) {
+    return
+  }
+
+  // Load versions
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  try {
+    loadingInlineVersions.value.add(key)
+    loadingInlineVersions.value = new Set(loadingInlineVersions.value) // Trigger reactivity
+
+    const response = await listObjectVersions(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      key
+    )
+
+    // Check if there's only one version
+    if (response.versions.length <= 1) {
+      // Don't expand if there's only one version
+      expandedVersions.value.delete(key)
+      expandedVersions.value = new Set(expandedVersions.value)
+      toast.info(t('onlyOneVersion'))
+      return
+    }
+
+    inlineVersions.value.set(key, response.versions)
+    inlineVersions.value = new Map(inlineVersions.value) // Trigger reactivity
+  } catch (e) {
+    toast.error(`${t('errorLoadingVersions')}: ${e}`)
+    // Remove from expanded if loading failed
+    expandedVersions.value.delete(key)
+    expandedVersions.value = new Set(expandedVersions.value)
+  } finally {
+    loadingInlineVersions.value.delete(key)
+    loadingInlineVersions.value = new Set(loadingInlineVersions.value)
   }
 }
 
@@ -2714,23 +3179,25 @@ function closeAllContextMenus() {
 }
 
 function openCreateFileModal() {
-  showCreateFileModal.value = true
+  modals.createFile = true
   closeEmptyContextMenu()
 }
 
 function openCreateFolderModalFromContext() {
-  showCreateFolderModal.value = true
+  modals.createFolder = true
   closeEmptyContextMenu()
 }
 
 async function createFileHandler() {
-  if (!newFileName.value.trim() || !appStore.currentProfile || !appStore.currentBucket) return
+  // Validate before creating
+  if (!fileCreation.name.trim() || fileCreation.validationError) return
+  if (!appStore.currentProfile || !appStore.currentBucket) return
 
   try {
-    creatingFile.value = true
+    fileCreation.isCreating = true
 
-    const filePath = appStore.currentPrefix + newFileName.value.trim()
-    const content = newFileContent.value || ''
+    const filePath = appStore.currentPrefix + fileCreation.name.trim()
+    const content = fileCreation.content || ''
     const encoder = new TextEncoder()
     const bytes = Array.from(encoder.encode(content))
 
@@ -2743,9 +3210,10 @@ async function createFileHandler() {
     )
 
     // Close modal and reset
-    showCreateFileModal.value = false
-    newFileName.value = ''
-    newFileContent.value = ''
+    modals.createFile = false
+    fileCreation.name = ''
+    fileCreation.content = ''
+    fileCreation.validationError = ''
     await appStore.loadObjects()
   } catch (e) {
     await dialog.confirm({
@@ -2755,7 +3223,7 @@ async function createFileHandler() {
       variant: 'destructive',
     })
   } finally {
-    creatingFile.value = false
+    fileCreation.isCreating = false
   }
 }
 
@@ -3059,7 +3527,7 @@ async function deleteSelectedItems() {
           progress,
         })
       } catch (e) {
-        console.error(`Failed to delete ${key}:`, e)
+        logger.error(`Failed to delete ${key}:`, e)
         failCount++
 
         // Update progress even on failure
@@ -3156,7 +3624,7 @@ async function downloadSelectedItems() {
           progress,
         })
       } catch (e) {
-        console.error(`Failed to download ${key}:`, e)
+        logger.error(`Failed to download ${key}:`, e)
         failCount++
 
         // Update progress toast even on failure

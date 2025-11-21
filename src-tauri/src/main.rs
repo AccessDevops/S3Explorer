@@ -34,6 +34,12 @@ fn main() {
             calculate_folder_size,
             delete_folder,
             list_object_versions,
+            get_file_size,
+            multipart_upload_start,
+            multipart_upload_part,
+            multipart_upload_part_from_file,
+            multipart_upload_complete,
+            multipart_upload_abort,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

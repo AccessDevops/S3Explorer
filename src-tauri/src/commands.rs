@@ -406,3 +406,155 @@ pub async fn list_object_versions(
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Initiate a multipart upload
+#[tauri::command]
+pub async fn multipart_upload_start(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    content_type: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<MultipartUploadInitResponse, String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .multipart_upload_start(&bucket, &key, content_type)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Upload a single part of a multipart upload
+#[tauri::command]
+pub async fn multipart_upload_part(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    upload_id: String,
+    part_number: i32,
+    data: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<MultipartUploadPartResponse, String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .multipart_upload_part(&bucket, &key, &upload_id, part_number, data)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get file metadata (size) without reading the entire file
+#[tauri::command]
+pub async fn get_file_size(file_path: String) -> Result<u64, String> {
+    use std::fs;
+
+    let metadata =
+        fs::metadata(&file_path).map_err(|e| format!("Failed to get file metadata: {}", e))?;
+
+    Ok(metadata.len())
+}
+
+/// Upload a multipart part by reading directly from file (optimized for large files)
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn multipart_upload_part_from_file(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    upload_id: String,
+    part_number: i32,
+    file_path: String,
+    offset: u64,
+    length: u64,
+    state: State<'_, AppState>,
+) -> Result<MultipartUploadPartResponse, String> {
+    use std::fs::File;
+    use std::io::{Read, Seek, SeekFrom};
+
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Read chunk from file
+    let mut file = File::open(&file_path).map_err(|e| format!("Failed to open file: {}", e))?;
+
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|e| format!("Failed to seek file: {}", e))?;
+
+    let mut buffer = vec![0u8; length as usize];
+    file.read_exact(&mut buffer)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    adapter
+        .multipart_upload_part(&bucket, &key, &upload_id, part_number, buffer)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Complete a multipart upload
+#[tauri::command]
+pub async fn multipart_upload_complete(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    upload_id: String,
+    parts: Vec<CompletedPart>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .multipart_upload_complete(&bucket, &key, &upload_id, parts)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Abort a multipart upload
+#[tauri::command]
+pub async fn multipart_upload_abort(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    upload_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .multipart_upload_abort(&bucket, &key, &upload_id)
+        .await
+        .map_err(|e| e.to_string())
+}

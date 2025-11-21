@@ -21,7 +21,6 @@
       >
         <div class="flex-1">
           <div class="font-medium">{{ profile.name }}</div>
-          <Badge variant="secondary" class="mt-1 text-xs">{{ profile.region }}</Badge>
         </div>
         <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
@@ -97,13 +96,28 @@
 
           <div class="space-y-2">
             <label class="text-sm font-medium">{{ t('endpoint') }} (optional)</label>
-            <Input v-model="formData.endpoint" :placeholder="t('endpointPlaceholder')" />
-            <p class="text-xs text-muted-foreground">{{ t('endpointDescription') }}</p>
+            <Input
+              v-model="formData.endpoint"
+              :placeholder="t('endpointPlaceholder')"
+              :class="validationErrors.endpoint ? 'border-red-500' : ''"
+            />
+            <p v-if="validationErrors.endpoint" class="text-xs text-red-600">
+              {{ validationErrors.endpoint }}
+            </p>
+            <p v-else class="text-xs text-muted-foreground">{{ t('endpointDescription') }}</p>
           </div>
 
           <div class="space-y-2">
             <label class="text-sm font-medium">{{ t('region') }} *</label>
-            <Input v-model="formData.region" required placeholder="us-east-1" />
+            <Input
+              v-model="formData.region"
+              required
+              placeholder="us-east-1"
+              :class="validationErrors.region ? 'border-red-500' : ''"
+            />
+            <p v-if="validationErrors.region" class="text-xs text-red-600">
+              {{ validationErrors.region }}
+            </p>
           </div>
 
           <div class="space-y-2">
@@ -184,10 +198,33 @@
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" @click="testConnectionHandler">
-              {{ t('testConnection') }}
+            <Button type="button" variant="outline" @click="testConnectionHandler" :disabled="isTesting">
+              <svg
+                v-if="isTesting"
+                class="animate-spin mr-2"
+                width="16"
+                height="16"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              {{ isTesting ? t('testing') : t('testConnection') }}
             </Button>
-            <Button type="submit">{{ t('save') }}</Button>
+            <Button type="submit" :disabled="!isFormValid">{{ t('save') }}</Button>
             <Button type="button" variant="secondary" @click="showAddModal = false">
               {{ t('cancel') }}
             </Button>
@@ -199,7 +236,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
@@ -208,7 +245,6 @@ import type { Profile, TestConnectionResponse } from '../types'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -217,6 +253,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { validateEndpoint, validateRegion } from '../utils/validators'
 
 const appStore = useAppStore()
 const { t } = useI18n()
@@ -224,6 +261,7 @@ const dialog = useDialog()
 const showAddModal = ref(false)
 const editingProfile = ref<Profile | null>(null)
 const testResult = ref<TestConnectionResponse | null>(null)
+const isTesting = ref(false)
 
 const formData = reactive({
   name: '',
@@ -236,6 +274,42 @@ const formData = reactive({
   use_tls: true,
 })
 
+// Validation errors
+const validationErrors = reactive({
+  endpoint: '',
+  region: '',
+})
+
+// Validate endpoint
+watch(
+  () => formData.endpoint,
+  (value) => {
+    const result = validateEndpoint(value)
+    validationErrors.endpoint = result.valid ? '' : result.error || ''
+  }
+)
+
+// Validate region
+watch(
+  () => formData.region,
+  (value) => {
+    const result = validateRegion(value)
+    validationErrors.region = result.valid ? '' : result.error || ''
+  }
+)
+
+// Check if form is valid
+const isFormValid = computed(() => {
+  return (
+    formData.name.trim() !== '' &&
+    formData.region.trim() !== '' &&
+    formData.access_key.trim() !== '' &&
+    formData.secret_key.trim() !== '' &&
+    validationErrors.endpoint === '' &&
+    validationErrors.region === ''
+  )
+})
+
 function resetForm() {
   formData.name = ''
   formData.endpoint = ''
@@ -245,11 +319,18 @@ function resetForm() {
   formData.session_token = ''
   formData.path_style = false
   formData.use_tls = true
+  validationErrors.endpoint = ''
+  validationErrors.region = ''
   testResult.value = null
   editingProfile.value = null
 }
 
 async function saveProfile() {
+  // Validate before saving
+  if (!isFormValid.value) {
+    return
+  }
+
   const profile: Profile = {
     id: editingProfile.value?.id || uuidv4(),
     name: formData.name,
@@ -285,12 +366,16 @@ async function testConnectionHandler() {
   }
 
   try {
+    isTesting.value = true
+    testResult.value = null // Clear previous result
     testResult.value = await testConnection(profile)
   } catch (e) {
     testResult.value = {
       success: false,
       message: String(e),
     }
+  } finally {
+    isTesting.value = false
   }
 }
 

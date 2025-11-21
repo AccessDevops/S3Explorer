@@ -579,4 +579,123 @@ impl S3Adapter {
 
         Ok(ListObjectVersionsResponse { versions })
     }
+
+    /// Initiate a multipart upload
+    pub async fn multipart_upload_start(
+        &self,
+        bucket: &str,
+        key: &str,
+        content_type: Option<String>,
+    ) -> Result<MultipartUploadInitResponse, AppError> {
+        let mut request = self
+            .client
+            .create_multipart_upload()
+            .bucket(bucket)
+            .key(key);
+
+        if let Some(ct) = content_type {
+            request = request.content_type(ct);
+        }
+
+        let output = request.send().await.map_err(|e| {
+            AppError::S3Error(format!("Failed to initiate multipart upload: {}", e))
+        })?;
+
+        let upload_id = output
+            .upload_id()
+            .ok_or_else(|| AppError::S3Error("No upload ID returned".to_string()))?
+            .to_string();
+
+        Ok(MultipartUploadInitResponse { upload_id })
+    }
+
+    /// Upload a single part
+    pub async fn multipart_upload_part(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        part_number: i32,
+        data: Vec<u8>,
+    ) -> Result<MultipartUploadPartResponse, AppError> {
+        let output = self
+            .client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .body(ByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| {
+                AppError::S3Error(format!("Failed to upload part {}: {}", part_number, e))
+            })?;
+
+        let e_tag = output
+            .e_tag()
+            .ok_or_else(|| AppError::S3Error(format!("No ETag returned for part {}", part_number)))?
+            .to_string();
+
+        Ok(MultipartUploadPartResponse { e_tag })
+    }
+
+    /// Complete a multipart upload
+    pub async fn multipart_upload_complete(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        parts: Vec<CompletedPart>,
+    ) -> Result<(), AppError> {
+        use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart as S3CompletedPart};
+
+        // Convert our CompletedPart to AWS SDK's CompletedPart
+        let completed_parts: Vec<S3CompletedPart> = parts
+            .iter()
+            .map(|p| {
+                S3CompletedPart::builder()
+                    .part_number(p.part_number)
+                    .e_tag(&p.e_tag)
+                    .build()
+            })
+            .collect();
+
+        let multipart_upload = CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+
+        self.client
+            .complete_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .multipart_upload(multipart_upload)
+            .send()
+            .await
+            .map_err(|e| {
+                AppError::S3Error(format!("Failed to complete multipart upload: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Abort a multipart upload
+    pub async fn multipart_upload_abort(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+    ) -> Result<(), AppError> {
+        self.client
+            .abort_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to abort multipart upload: {}", e)))?;
+
+        Ok(())
+    }
 }

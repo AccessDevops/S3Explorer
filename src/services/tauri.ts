@@ -81,7 +81,7 @@ export async function putObject(
   profileId: string,
   bucket: string,
   key: string,
-  content: number[],
+  content: number[] | Uint8Array,
   contentType?: string
 ): Promise<void> {
   return await invoke('put_object', {
@@ -192,5 +192,95 @@ export async function listObjectVersions(
     profileId,
     bucket,
     key,
+  })
+}
+
+// File Operations
+export async function getFileSize(filePath: string): Promise<number> {
+  return await invoke('get_file_size', { filePath })
+}
+
+// Multipart Upload Operations
+export async function multipartUploadStart(
+  profileId: string,
+  bucket: string,
+  key: string,
+  contentType?: string
+): Promise<{ upload_id: string }> {
+  return await invoke('multipart_upload_start', {
+    profileId,
+    bucket,
+    key,
+    contentType,
+  })
+}
+
+export async function multipartUploadPart(
+  profileId: string,
+  bucket: string,
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  data: number[] | Uint8Array
+): Promise<{ e_tag: string }> {
+  return await invoke('multipart_upload_part', {
+    profileId,
+    bucket,
+    key,
+    uploadId,
+    partNumber,
+    data,
+  })
+}
+
+export async function multipartUploadPartFromFile(
+  profileId: string,
+  bucket: string,
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  filePath: string,
+  offset: number,
+  length: number
+): Promise<{ e_tag: string }> {
+  return await invoke('multipart_upload_part_from_file', {
+    profileId,
+    bucket,
+    key,
+    uploadId,
+    partNumber,
+    filePath,
+    offset,
+    length,
+  })
+}
+
+export async function multipartUploadComplete(
+  profileId: string,
+  bucket: string,
+  key: string,
+  uploadId: string,
+  parts: Array<{ part_number: number; e_tag: string }>
+): Promise<void> {
+  return await invoke('multipart_upload_complete', {
+    profileId,
+    bucket,
+    key,
+    uploadId,
+    parts,
+  })
+}
+
+export async function multipartUploadAbort(
+  profileId: string,
+  bucket: string,
+  key: string,
+  uploadId: string
+): Promise<void> {
+  return await invoke('multipart_upload_abort', {
+    profileId,
+    bucket,
+    key,
+    uploadId,
   })
 }

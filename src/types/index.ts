@@ -70,3 +70,28 @@ export interface ObjectVersion {
 export interface ListObjectVersionsResponse {
   versions: ObjectVersion[]
 }
+
+// Multipart Upload
+export interface MultipartUploadInitResponse {
+  upload_id: string
+}
+
+export interface CompletedPart {
+  part_number: number
+  e_tag: string
+}
+
+export interface MultipartUploadPartResponse {
+  e_tag: string
+}
+
+export interface MultipartProgress {
+  uploadedParts: number
+  totalParts: number
+  uploadedBytes: number
+  totalBytes: number
+  percentage: number
+}
+
+// Error types
+export * from './errors'

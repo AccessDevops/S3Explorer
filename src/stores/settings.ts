@@ -3,11 +3,13 @@ import { ref } from 'vue'
 
 export type Language = 'en' | 'zh' | 'hi' | 'es' | 'fr' | 'ar' | 'bn' | 'pt' | 'id' | 'ro'
 export type SearchMode = 'local' | 'global'
+export type ViewMode = 'normal' | 'compact'
 
 export const useSettingsStore = defineStore('settings', () => {
   const language = ref<Language>('en')
   const batchSize = ref(250)
   const searchMode = ref<SearchMode>('local')
+  const viewMode = ref<ViewMode>('normal')
 
   // Load settings from localStorage on init
   const loadSettings = () => {
@@ -27,6 +29,11 @@ export const useSettingsStore = defineStore('settings', () => {
     const savedSearchMode = localStorage.getItem('app-searchMode') as SearchMode | null
     if (savedSearchMode === 'local' || savedSearchMode === 'global') {
       searchMode.value = savedSearchMode
+    }
+
+    const savedViewMode = localStorage.getItem('app-viewMode') as ViewMode | null
+    if (savedViewMode === 'normal' || savedViewMode === 'compact') {
+      viewMode.value = savedViewMode
     }
   }
 
@@ -51,13 +58,21 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-searchMode', mode)
   }
 
+  // Save view mode to localStorage
+  const setViewMode = (mode: ViewMode) => {
+    viewMode.value = mode
+    localStorage.setItem('app-viewMode', mode)
+  }
+
   return {
     language,
     batchSize,
     searchMode,
+    viewMode,
     loadSettings,
     setLanguage,
     setBatchSize,
     setSearchMode,
+    setViewMode,
   }
 })

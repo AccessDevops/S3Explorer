@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Profile, Bucket, S3Object } from '../types'
+import { AppError } from '../types/errors'
 import * as tauriService from '../services/tauri'
 import { useToast } from '../composables/useToast'
 import { useSettingsStore } from './settings'
+import { logger } from '../utils/logger'
 
 export const useAppStore = defineStore('app', () => {
   const toast = useToast()
@@ -49,7 +51,7 @@ export const useAppStore = defineStore('app', () => {
       error.value = null
       profiles.value = await tauriService.listProfiles()
     } catch (e) {
-      error.value = String(e)
+      error.value = AppError.fromUnknown(e).message
       throw e
     } finally {
       isLoading.value = false
@@ -73,7 +75,7 @@ export const useAppStore = defineStore('app', () => {
       await tauriService.saveProfile(profile)
       await loadProfiles()
     } catch (e) {
-      error.value = String(e)
+      error.value = AppError.fromUnknown(e).message
       throw e
     } finally {
       isLoading.value = false
@@ -93,7 +95,7 @@ export const useAppStore = defineStore('app', () => {
       }
       await loadProfiles()
     } catch (e) {
-      error.value = String(e)
+      error.value = AppError.fromUnknown(e).message
       throw e
     } finally {
       isLoading.value = false
@@ -112,7 +114,7 @@ export const useAppStore = defineStore('app', () => {
       buckets.value = await tauriService.listBuckets(currentProfile.value.id)
       toast.completeToast(toastId, `Loaded ${buckets.value.length} bucket(s)`, 'success')
     } catch (e) {
-      error.value = String(e)
+      error.value = AppError.fromUnknown(e).message
       toast.completeToast(toastId, 'Failed to load buckets', 'error')
       throw e
     } finally {
@@ -139,6 +141,12 @@ export const useAppStore = defineStore('app', () => {
         bucket: currentBucket.value,
         prefix: currentPrefix.value,
       })
+
+      // Limit history to 50 entries to prevent memory overflow
+      const MAX_HISTORY = 50
+      if (navigationHistory.value.length > MAX_HISTORY) {
+        navigationHistory.value = navigationHistory.value.slice(-MAX_HISTORY)
+      }
     }
 
     currentPrefix.value = prefix
@@ -190,7 +198,7 @@ export const useAppStore = defineStore('app', () => {
       }
     } catch (e) {
       // Silent fail for preload - not critical
-      console.warn('Failed to preload next page:', e)
+      logger.warn('Failed to preload next page', e)
       preloadedNextPage.value = null
     }
   }
@@ -268,7 +276,7 @@ export const useAppStore = defineStore('app', () => {
         preloadNextPage()
       }
     } catch (e) {
-      error.value = String(e)
+      error.value = AppError.fromUnknown(e).message
       loadingProgress.value.show = false // Hide progress bar on error
       if (currentLoadToastId) {
         toast.completeToast(currentLoadToastId, 'Failed to load objects', 'error')

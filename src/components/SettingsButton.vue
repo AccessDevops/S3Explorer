@@ -78,6 +78,82 @@
               class="max-w-xs"
             />
           </div>
+
+          <!-- View Mode Setting -->
+          <div class="space-y-3">
+            <div>
+              <label class="text-sm font-medium">{{ t('viewMode') }}</label>
+              <p class="text-sm text-muted-foreground">{{ t('viewModeDescription') }}</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 max-w-md">
+              <button
+                @click="changeViewMode('normal')"
+                :class="[
+                  'p-3 rounded-lg border-2 transition-all text-left',
+                  settingsStore.viewMode === 'normal'
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary/50',
+                ]"
+              >
+                <div class="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                    <path d="M3 9h18" />
+                    <path d="M3 15h18" />
+                  </svg>
+                  <div class="min-w-0">
+                    <div class="font-medium text-sm">{{ t('normalView') }}</div>
+                    <div class="text-xs text-muted-foreground">{{ t('normalViewDesc') }}</div>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                @click="changeViewMode('compact')"
+                :class="[
+                  'p-3 rounded-lg border-2 transition-all text-left',
+                  settingsStore.viewMode === 'compact'
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary/50',
+                ]"
+              >
+                <div class="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                    <path d="M3 7h18" />
+                    <path d="M3 11h18" />
+                    <path d="M3 15h18" />
+                    <path d="M3 19h18" />
+                  </svg>
+                  <div class="min-w-0">
+                    <div class="font-medium text-sm">{{ t('compactView') }}</div>
+                    <div class="text-xs text-muted-foreground">{{ t('compactViewDesc') }}</div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
 
         <DialogFooter>
@@ -101,7 +177,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Language } from '../stores/settings'
+import type { Language, ViewMode } from '../stores/settings'
 
 const settingsStore = useSettingsStore()
 const { t } = useI18n()
@@ -122,5 +198,9 @@ const languages = [
 
 function changeLanguage(lang: Language) {
   settingsStore.setLanguage(lang)
+}
+
+function changeViewMode(mode: ViewMode) {
+  settingsStore.setViewMode(mode)
 }
 </script>
