@@ -141,6 +141,7 @@ export const translations = {
     // Success messages
     uploadSuccess: 'Successfully uploaded {0} file{1}!',
     deleteSuccess: 'Successfully deleted {0} item{1}!',
+    filesDownloadedSuccess: 'Successfully downloaded {0} file(s)!',
 
     // Error messages
     uploadFailed: 'Upload failed',
@@ -153,9 +154,12 @@ export const translations = {
     deleteOperationFailed: 'Delete operation failed',
     uploadPartialSuccess: 'Uploaded {0} file(s), {1} failed',
     deletePartialSuccess: 'Deleted {0} item(s), {1} failed',
+    downloadPartialSuccess: 'Downloaded {0} file(s), {1} failed',
     selectProfileFirst: 'Please select a profile and bucket first',
     cannotCopyFolders: 'Cannot copy folders. Please select files only.',
     multiCopyNotSupported: 'Multiple file copy is not yet supported. Please select only one file.',
+    noFilesToDownload: 'No files selected. Please select files to download.',
+    selectDownloadFolder: 'Select download folder',
 
     // Search
     searchFilesAndFolders: 'Search files and folders...',
@@ -300,6 +304,7 @@ export const translations = {
     // Messages de succès
     uploadSuccess: '{0} fichier{1} téléversé avec succès !',
     deleteSuccess: '{0} élément{1} supprimé avec succès !',
+    filesDownloadedSuccess: '{0} fichier(s) téléchargé(s) avec succès !',
 
     // Messages d\'erreur
     uploadFailed: 'Échec du téléversement',
@@ -312,9 +317,12 @@ export const translations = {
     deleteOperationFailed: 'Échec de l\'opération de suppression',
     uploadPartialSuccess: '{0} fichier(s) téléversé(s), {1} échec(s)',
     deletePartialSuccess: '{0} élément(s) supprimé(s), {1} échec(s)',
+    downloadPartialSuccess: '{0} fichier(s) téléchargé(s), {1} échec(s)',
     selectProfileFirst: 'Veuillez d\'abord sélectionner un profil et un bucket',
     cannotCopyFolders: 'Impossible de copier des dossiers. Veuillez sélectionner uniquement des fichiers.',
     multiCopyNotSupported: 'La copie de plusieurs fichiers n\'est pas encore prise en charge. Veuillez sélectionner un seul fichier.',
+    noFilesToDownload: 'Aucun fichier sélectionné. Veuillez sélectionner des fichiers à télécharger.',
+    selectDownloadFolder: 'Sélectionner le dossier de téléchargement',
 
     // Recherche
     searchFilesAndFolders: 'Rechercher des fichiers et dossiers...',

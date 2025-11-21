@@ -66,7 +66,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Dependencies
 sudo apt update
-sudo apt install -y libgtk-3-dev libwebkit2gtk-4.0-dev \
+sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
   libappindicator3-dev librsvg2-dev patchelf
 ```
 
@@ -181,10 +181,10 @@ https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 ### Erreur de dépendances (Linux)
 ```bash
 # Ubuntu/Debian
-sudo apt install -y libgtk-3-0 libwebkit2gtk-4.0-37
+sudo apt install -y libgtk-3-0 libwebkit2gtk-4.1-0
 
 # Fedora
-sudo dnf install gtk3 webkit2gtk3
+sudo dnf install gtk3 webkit2gtk4.1
 ```
 
 ## 📦 Tailles des Binaires

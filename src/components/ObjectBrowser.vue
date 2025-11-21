@@ -192,6 +192,7 @@
         <Button size="sm" variant="ghost" @click="clearSelection">{{ t('clear') }}</Button>
       </div>
       <div class="flex gap-2">
+        <Button size="sm" variant="secondary" @click="downloadSelectedItems">{{ t('download') }}</Button>
         <Button size="sm" variant="secondary" @click="copySelectedItems">{{ t('copy') }}</Button>
         <Button size="sm" variant="destructive" @click="deleteSelectedItems" :title="t('delete')">
           <svg
@@ -1664,6 +1665,97 @@ async function deleteSelectedItems() {
     await dialog.confirm({
       title: t('errorOccurred'),
       message: `${t('deleteOperationFailed')}: ${e}`,
+      confirmText: t('close'),
+      variant: 'destructive'
+    })
+  }
+}
+
+async function downloadSelectedItems() {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  // Filter to get only files (exclude folders)
+  const selectedFiles = Array.from(selectedItems.value).filter(key =>
+    appStore.objects.some(obj => obj.key === key)
+  )
+
+  if (selectedFiles.length === 0) {
+    toast.warning(t('noFilesToDownload'))
+    return
+  }
+
+  try {
+    // Ask user to select a folder to save all files
+    const folderPath = await save({
+      defaultPath: 'downloads',
+      title: t('selectDownloadFolder')
+    })
+
+    if (!folderPath) return
+
+    // Get the directory path (remove the filename if any)
+    const directory = folderPath.includes('/')
+      ? folderPath.substring(0, folderPath.lastIndexOf('/'))
+      : folderPath.includes('\\')
+      ? folderPath.substring(0, folderPath.lastIndexOf('\\'))
+      : folderPath
+
+    const { getObject } = await import('../services/tauri')
+    let successCount = 0
+    let failCount = 0
+
+    // Create a persistent progress toast (duration = 0 means it won't auto-dismiss)
+    const progressToastId = toast.info(
+      `${t('downloading')} 0/${selectedFiles.length}`,
+      0
+    )
+
+    for (const key of selectedFiles) {
+      try {
+        const fileName = getFileName(key)
+        const filePath = `${directory}/${fileName}`
+
+        const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
+        await writeBinaryFile(filePath, new Uint8Array(response.content))
+        successCount++
+
+        // Update progress toast
+        const totalProcessed = successCount + failCount
+        toast.updateToast(
+          progressToastId,
+          `${t('downloading')} ${totalProcessed}/${selectedFiles.length}`
+        )
+      } catch (e) {
+        console.error(`Failed to download ${key}:`, e)
+        failCount++
+
+        // Update progress toast even on failure
+        const totalProcessed = successCount + failCount
+        toast.updateToast(
+          progressToastId,
+          `${t('downloading')} ${totalProcessed}/${selectedFiles.length}`
+        )
+      }
+    }
+
+    // Remove the progress toast
+    toast.removeToast(progressToastId)
+
+    clearSelection()
+
+    // Show final result toast
+    if (failCount === 0) {
+      toast.success(t('filesDownloadedSuccess')
+        .replace('{0}', String(successCount)))
+    } else {
+      toast.warning(t('downloadPartialSuccess')
+        .replace('{0}', String(successCount))
+        .replace('{1}', String(failCount)))
+    }
+  } catch (e) {
+    await dialog.confirm({
+      title: t('errorOccurred'),
+      message: `${t('downloadFailed')}: ${e}`,
       confirmText: t('close'),
       variant: 'destructive'
     })

@@ -33,6 +33,13 @@ export function useToast() {
     }
   }
 
+  const updateToast = (id: string, message: string) => {
+    const toast = toasts.value.find(t => t.id === id)
+    if (toast) {
+      toast.message = message
+    }
+  }
+
   const success = (message: string, duration?: number) => {
     return addToast(message, 'success', duration)
   }
@@ -53,6 +60,7 @@ export function useToast() {
     toasts,
     addToast,
     removeToast,
+    updateToast,
     success,
     error,
     info,

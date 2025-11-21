@@ -43,7 +43,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev \
+          sudo apt-get install -y libwebkit2gtk-4.1-dev \
             build-essential \
             curl \
             wget \
@@ -105,7 +105,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev \
+          sudo apt-get install -y libwebkit2gtk-4.1-dev \
             build-essential \
             curl \
             wget \
