@@ -1,0 +1,71 @@
+// S3 Profile
+export interface Profile {
+  id: string
+  name: string
+  endpoint?: string
+  region: string
+  access_key: string
+  secret_key: string
+  session_token?: string
+  path_style: boolean
+  use_tls: boolean
+}
+
+// Test Connection
+export interface TestConnectionResponse {
+  success: boolean
+  message: string
+  bucket_count?: number
+}
+
+// Bucket
+export interface Bucket {
+  name: string
+  creation_date?: string
+}
+
+// S3 Object
+export interface S3Object {
+  key: string
+  size: number
+  last_modified?: string
+  storage_class?: string
+  e_tag?: string
+  is_folder: boolean
+}
+
+// List Objects Response
+export interface ListObjectsResponse {
+  objects: S3Object[]
+  common_prefixes: string[]
+  continuation_token?: string
+  is_truncated: boolean
+}
+
+// Get Object Response
+export interface GetObjectResponse {
+  content: number[]
+  content_type?: string
+  size: number
+}
+
+// Presigned URL Response
+export interface PresignedUrlResponse {
+  url: string
+  expires_in_secs: number
+}
+
+// Object Version
+export interface ObjectVersion {
+  version_id: string
+  key: string
+  size: number
+  last_modified?: string
+  is_latest: boolean
+  e_tag?: string
+}
+
+// List Object Versions Response
+export interface ListObjectVersionsResponse {
+  versions: ObjectVersion[]
+}
