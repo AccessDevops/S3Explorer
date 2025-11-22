@@ -11,6 +11,8 @@ Desktop application for managing S3-compatible object storage (AWS S3, GCP S3-co
 
 ## Core Architecture
 
+The cargo in not in the path but there $HOME/.cargo/bin
+
 ### Frontend (Vue 3 + TypeScript)
 - **State Management**: Pinia for global state (profiles, buckets, current navigation)
 - **Router**: Vue Router for navigation between views

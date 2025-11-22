@@ -93,5 +93,18 @@ export interface MultipartProgress {
   percentage: number
 }
 
+// Upload Progress Event (from Rust)
+export interface UploadProgressEvent {
+  upload_id: string
+  file_name: string
+  file_size: number
+  uploaded_bytes: number
+  uploaded_parts: number
+  total_parts: number
+  percentage: number
+  status: 'pending' | 'starting' | 'uploading' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+}
+
 // Error types
 export * from './errors'

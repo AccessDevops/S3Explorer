@@ -284,3 +284,26 @@ export async function multipartUploadAbort(
     uploadId,
   })
 }
+
+// New unified upload command (Rust-managed with progress events)
+export async function uploadFile(
+  profileId: string,
+  bucket: string,
+  key: string,
+  filePath: string,
+  contentType?: string
+): Promise<string> {
+  return await invoke('upload_file', {
+    profileId,
+    bucket,
+    key,
+    filePath,
+    contentType,
+  })
+}
+
+export async function cancelUpload(uploadId: string): Promise<void> {
+  return await invoke('cancel_upload', {
+    uploadId,
+  })
+}

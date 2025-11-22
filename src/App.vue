@@ -18,8 +18,8 @@
     <!-- Toast Notifications -->
     <ToastContainer />
 
-    <!-- Upload Progress -->
-    <UploadProgress />
+    <!-- Upload Progress (Rust-managed) -->
+    <RustUploadProgress />
   </div>
 </template>
 
@@ -27,7 +27,7 @@
 import { RouterView } from 'vue-router'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import ToastContainer from './components/ToastContainer.vue'
-import UploadProgress from './components/UploadProgress.vue'
+import RustUploadProgress from './components/RustUploadProgress.vue'
 import { useDialog } from './composables/useDialog'
 
 const dialog = useDialog()

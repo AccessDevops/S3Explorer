@@ -178,3 +178,29 @@ pub struct CompletedPart {
 pub struct MultipartUploadPartResponse {
     pub e_tag: String,
 }
+
+/// Upload progress event payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadProgressEvent {
+    pub upload_id: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub uploaded_bytes: u64,
+    pub uploaded_parts: i32,
+    pub total_parts: i32,
+    pub percentage: f64,
+    pub status: UploadStatus,
+    pub error: Option<String>,
+}
+
+/// Upload status enum
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadStatus {
+    Pending,
+    Starting,
+    Uploading,
+    Completed,
+    Failed,
+    Cancelled,
+}

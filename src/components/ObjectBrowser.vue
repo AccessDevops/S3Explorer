@@ -144,7 +144,7 @@
       </div>
 
       <div class="flex gap-2 flex-shrink-0">
-        <Button size="sm" variant="outline" @click="showUploadModal = true">{{
+        <Button size="sm" variant="outline" @click="uploadFilesHandler">{{
           t('upload')
         }}</Button>
         <Button size="sm" variant="outline" @click="modals.createFolder = true">{{
@@ -703,40 +703,6 @@
       <div>{{ t('totalSize') }}: {{ formatSize(totalSize) }}</div>
     </div>
 
-    <!-- Upload Modal -->
-    <Dialog v-model:open="showUploadModal">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{{ t('upload') }}</DialogTitle>
-        </DialogHeader>
-        <input type="file" multiple @change="handleFileSelect" class="mb-4" />
-        <div v-if="uploadFiles.length > 0" class="space-y-2 max-h-64 overflow-y-auto mb-4">
-          <div
-            v-for="(file, index) in uploadFiles"
-            :key="index"
-            class="p-3 bg-muted rounded-md flex items-center justify-between"
-          >
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium truncate" :title="file.name">{{ file.name }}</p>
-              <p class="text-xs text-muted-foreground">{{ formatSize(file.size) }}</p>
-            </div>
-            <button
-              @click="removeFile(index)"
-              class="ml-2 text-destructive hover:bg-destructive/10 rounded px-2 py-1"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button @click="uploadFilesHandler" :disabled="uploadFiles.length === 0">{{
-            t('upload')
-          }}</Button>
-          <Button variant="secondary" @click="showUploadModal = false">{{ t('cancel') }}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
     <!-- Create Folder Modal -->
     <Dialog v-model:open="modals.createFolder">
       <DialogContent>
@@ -1103,44 +1069,6 @@
       class="fixed inset-0 z-40"
     ></div>
 
-    <!-- Upload Progress Bar -->
-    <div
-      v-if="uploadProgress.isUploading"
-      class="fixed bottom-4 right-4 z-50 bg-card border border-border rounded-lg shadow-lg p-4 min-w-[320px]"
-    >
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium">{{ t('uploading') }}</span>
-        <span class="text-sm text-muted-foreground"
-          >{{ uploadProgress.currentIndex }}/{{ uploadProgress.totalFiles }}</span
-        >
-      </div>
-      <div class="text-xs text-muted-foreground mb-2 truncate">
-        {{ uploadProgress.currentFile }}
-      </div>
-      <div class="w-full bg-muted rounded-full h-2 overflow-hidden mb-2">
-        <div
-          class="bg-primary h-full transition-all duration-300"
-          :style="{ width: `${(uploadProgress.uploadedBytes / uploadProgress.totalBytes) * 100}%` }"
-        ></div>
-      </div>
-      <div class="flex items-center justify-between text-xs text-muted-foreground">
-        <span
-          >{{ formatSize(uploadProgress.uploadedBytes) }} /
-          {{ formatSize(uploadProgress.totalBytes) }}</span
-        >
-        <span>
-          {{
-            uploadProgress.estimatedTimeRemaining === '--'
-              ? t('estimating')
-              : `${uploadProgress.estimatedTimeRemaining} ${t('remaining')}`
-          }}
-        </span>
-      </div>
-      <div v-if="uploadProgress.failCount > 0" class="text-xs text-destructive mt-2">
-        {{ uploadProgress.failCount }} {{ uploadProgress.failCount > 1 ? 'errors' : 'error' }}
-      </div>
-    </div>
-
     <!-- Loading Progress Bar -->
     <Transition
       enter-active-class="transition-opacity duration-200"
@@ -1177,13 +1105,7 @@ import { useSwipeBack } from '../composables/useSwipeBack'
 import { formatSize, formatDate } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { validateObjectKey } from '../utils/validators'
-import {
-  uploadLargeFile,
-  uploadLargeFileFromPath,
-  shouldUseMultipartUpload,
-  getConcurrencyForMultipleFiles,
-} from '../utils/multipartUpload'
-import { useUploadManager } from '../composables/useUploadManager'
+import { useRustUploadManager } from '../composables/useRustUploadManager'
 import {
   createFolder as createFolderService,
   deleteObject,
@@ -1193,10 +1115,9 @@ import {
   listObjects,
   copyObject,
   listObjectVersions,
-  getFileSize,
 } from '../services/tauri'
-import { save } from '@tauri-apps/api/dialog'
-import { writeBinaryFile, readBinaryFile } from '@tauri-apps/api/fs'
+import { save, open } from '@tauri-apps/api/dialog'
+import { writeBinaryFile } from '@tauri-apps/api/fs'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { S3Object, ObjectVersion } from '../types'
@@ -1305,7 +1226,7 @@ const { viewMode } = storeToRefs(settingsStore)
 const { t } = useI18n()
 const dialog = useDialog()
 const toast = useToast()
-const uploadManager = useUploadManager()
+const rustUploadManager = useRustUploadManager()
 
 // Grouped reactive state - Modals
 const modals = reactive({
@@ -1493,7 +1414,6 @@ const sorting = reactive({
 // Standalone refs that don't fit in groups
 const objectListRef = ref<HTMLElement | null>(null)
 const objectViewerRef = ref<InstanceType<typeof ObjectViewer> | null>(null)
-const uploadFiles = ref<File[]>([])
 const pasting = ref(false)
 
 // Context menu refs (will be migrated to contextMenus grouped state)
@@ -1559,7 +1479,6 @@ const sortBy = ref<SortColumn>('name')
 const sortOrder = ref<SortOrder>('asc')
 
 // Modal refs (already using modals grouped state, but some legacy refs)
-const showUploadModal = ref(false)
 const showRenameModal = ref(false)
 
 // Rename refs (already using rename grouped state)
@@ -1590,19 +1509,7 @@ const rowGap = computed(() => (isCompactView.value ? 'gap-0.5' : 'gap-1.5'))
 const iconSize = computed(() => (isCompactView.value ? 16 : 18))
 const textSize = computed(() => 'text-xs')
 
-// Upload progress tracking
-const uploadProgress = ref({
-  isUploading: false,
-  currentFile: '',
-  currentIndex: 0,
-  totalFiles: 0,
-  successCount: 0,
-  failCount: 0,
-  startTime: 0,
-  totalBytes: 0,
-  uploadedBytes: 0,
-  estimatedTimeRemaining: '',
-})
+// Upload progress tracking (handled by RustUploadManager now)
 
 let unlistenFileDrop: UnlistenFn | null = null
 let unlistenFileDropHover: UnlistenFn | null = null
@@ -2313,28 +2220,22 @@ function getFileIcon(key: string): { icon: any; colorClass: string } {
   }
 }
 
-function handleFileSelect(event: Event) {
-  const target = event.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    uploadFiles.value = Array.from(target.files)
-  }
-}
-
-function removeFile(index: number) {
-  uploadFiles.value.splice(index, 1)
-}
-
 async function uploadFilesHandler() {
-  if (uploadFiles.value.length === 0 || !appStore.currentProfile || !appStore.currentBucket) return
+  if (!appStore.currentProfile || !appStore.currentBucket) return
 
-  // Close modal immediately
-  showUploadModal.value = false
+  // Use Tauri dialog to select files
+  const selected = await open({
+    multiple: true,
+    title: t('upload'),
+  })
 
-  // Helper to detect content type
-  const getContentType = (file: File): string | undefined => {
-    if (file.type) return file.type
+  if (!selected) return // User cancelled
 
-    const ext = file.name.split('.').pop()?.toLowerCase()
+  const filePaths = Array.isArray(selected) ? selected : [selected]
+
+  // Helper to detect content type from file extension
+  const getContentType = (fileName: string): string | undefined => {
+    const ext = fileName.split('.').pop()?.toLowerCase()
     if (!ext) return undefined
 
     const contentTypes: Record<string, string> = {
@@ -2347,73 +2248,35 @@ async function uploadFilesHandler() {
       json: 'application/json',
       xml: 'application/xml',
       zip: 'application/zip',
+      mp4: 'video/mp4',
     }
 
     return contentTypes[ext]
   }
 
-  // Upload each file
-  for (const file of uploadFiles.value) {
-    const key = appStore.currentPrefix + file.name
-    const contentType = getContentType(file)
-    const useMultipart = shouldUseMultipartUpload(file.size)
-
-    // Create upload task
-    const uploadId = uploadManager.createUpload(file.name, file.size, useMultipart)
-    const signal = uploadManager.getSignal(uploadId)
+  // Upload each file using Rust command (non-blocking)
+  for (const filePath of filePaths) {
+    const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file'
+    const key = appStore.currentPrefix + fileName
+    const contentType = getContentType(fileName)
 
     try {
-      if (useMultipart) {
-        // Calculate concurrency limit based on active uploads
-        const activeCount = uploadManager.activeUploads.value.length
-        const concurrencyLimit = getConcurrencyForMultipleFiles(activeCount)
-
-        // Multipart upload with progress tracking and dynamic concurrency
-        await uploadLargeFile({
-          profileId: appStore.currentProfile.id,
-          bucket: appStore.currentBucket,
-          key,
-          file,
-          contentType,
-          signal,
-          concurrentUploads: concurrencyLimit,
-          onProgress: (progress) => {
-            uploadManager.updateProgress(uploadId, progress)
-          },
-        })
-      } else {
-        // Simple upload for small files
-        const arrayBuffer = await file.arrayBuffer()
-        const bytes = new Uint8Array(arrayBuffer)
-
-        await putObject(
-          appStore.currentProfile.id,
-          appStore.currentBucket,
-          key,
-          bytes,
-          contentType
-        )
-
-        // Update progress to 100%
-        uploadManager.updateProgress(uploadId, {
-          uploadedParts: 1,
-          totalParts: 1,
-          uploadedBytes: file.size,
-          totalBytes: file.size,
-          percentage: 100,
-        })
-      }
-
-      uploadManager.completeUpload(uploadId)
+      // Start upload (Rust handles everything: multipart, progress, etc.)
+      await rustUploadManager.startUpload(
+        appStore.currentProfile.id,
+        appStore.currentBucket,
+        key,
+        filePath,
+        contentType
+      )
+      logger.debug(`✓ Started upload: ${fileName}`)
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e)
-      uploadManager.failUpload(uploadId, errorMessage)
+      logger.error(`✗ Failed to start upload ${fileName}:`, e)
+      toast.error(`Upload failed: ${fileName}`)
     }
   }
 
-  // Clear file selection and reload objects
-  uploadFiles.value = []
-  await appStore.loadObjects()
+  // Objects will be reloaded automatically when uploads complete
 }
 
 async function createFolderHandler() {
@@ -2818,7 +2681,7 @@ async function deleteFolderConfirm(folder: string) {
   }
 }
 
-// Handle file drop using Tauri's event system
+// Handle file drop using Tauri's event system (NEW: Rust-managed uploads)
 async function handleFileDrop(paths: string[]) {
   if (!appStore.currentProfile || !appStore.currentBucket) {
     logger.error('No profile or bucket selected')
@@ -2827,7 +2690,7 @@ async function handleFileDrop(paths: string[]) {
 
   logger.debug(`Starting upload of ${paths.length} file(s) via drag & drop...`)
 
-  // Helper to get content type from file name
+  // Helper to detect content type from file extension
   const getContentType = (fileName: string): string | undefined => {
     const ext = fileName.split('.').pop()?.toLowerCase()
     if (!ext) return undefined
@@ -2842,83 +2705,36 @@ async function handleFileDrop(paths: string[]) {
       json: 'application/json',
       xml: 'application/xml',
       zip: 'application/zip',
+      mp4: 'video/mp4',
     }
 
     return contentTypes[ext]
   }
 
-  // Upload each dropped file
+  // Upload each file using Rust command (non-blocking)
   for (const filePath of paths) {
     const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file'
+    const key = appStore.currentPrefix + fileName
+    const contentType = getContentType(fileName)
 
     try {
-      // Get file size without reading entire file (optimized!)
-      const fileSize = await getFileSize(filePath)
-      const key = appStore.currentPrefix + fileName
-      const contentType = getContentType(fileName)
-      const useMultipart = shouldUseMultipartUpload(fileSize)
-
-      // Create upload task immediately after knowing the size
-      const uploadId = uploadManager.createUpload(fileName, fileSize, useMultipart)
-      const signal = uploadManager.getSignal(uploadId)
-
-      try {
-        if (useMultipart) {
-          // Calculate concurrency limit based on active uploads
-          const activeCount = uploadManager.activeUploads.value.length
-          const concurrencyLimit = getConcurrencyForMultipleFiles(activeCount)
-
-          // Optimized multipart upload - Rust reads file directly from disk
-          await uploadLargeFileFromPath({
-            profileId: appStore.currentProfile.id,
-            bucket: appStore.currentBucket,
-            key,
-            filePath,
-            fileSize,
-            contentType,
-            signal,
-            concurrentUploads: concurrencyLimit,
-            onProgress: (progress) => {
-              uploadManager.updateProgress(uploadId, progress)
-            },
-          })
-        } else {
-          // Simple upload for small files (read in JS is fine for <50MB)
-          const fileData = await readBinaryFile(filePath)
-
-          await putObject(
-            appStore.currentProfile.id,
-            appStore.currentBucket,
-            key,
-            fileData,
-            contentType
-          )
-
-          // Update progress to 100%
-          uploadManager.updateProgress(uploadId, {
-            uploadedParts: 1,
-            totalParts: 1,
-            uploadedBytes: fileSize,
-            totalBytes: fileSize,
-            percentage: 100,
-          })
-        }
-
-        uploadManager.completeUpload(uploadId)
-        logger.debug(`✓ Successfully uploaded: ${fileName}`)
-      } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : String(e)
-        uploadManager.failUpload(uploadId, errorMessage)
-        logger.error(`✗ Failed to upload ${fileName}:`, e)
-      }
+      // Start upload (Rust handles everything: file reading, multipart, progress, etc.)
+      await rustUploadManager.startUpload(
+        appStore.currentProfile.id,
+        appStore.currentBucket,
+        key,
+        filePath,
+        contentType
+      )
+      logger.debug(`✓ Started upload: ${fileName}`)
     } catch (e) {
-      logger.error(`✗ Failed to get file size ${filePath}:`, e)
+      logger.error(`✗ Failed to start upload ${fileName}:`, e)
+      toast.error(`Upload failed: ${fileName}`)
     }
   }
 
-  // Reload objects after all uploads
-  await appStore.loadObjects()
-  logger.debug(`Drag & drop upload complete`)
+  // Objects will be reloaded automatically when uploads complete
+  logger.debug(`Drag & drop upload initiated for ${paths.length} file(s)`)
 }
 
 // Context menu functions

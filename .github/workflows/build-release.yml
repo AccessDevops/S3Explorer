@@ -66,6 +66,7 @@ jobs:
         run: npm run tauri:build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=8192
 
       - name: Upload artifacts (macOS)
         if: matrix.platform == 'macos-latest'

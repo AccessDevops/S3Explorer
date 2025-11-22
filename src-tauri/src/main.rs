@@ -40,6 +40,8 @@ fn main() {
             multipart_upload_part_from_file,
             multipart_upload_complete,
             multipart_upload_abort,
+            upload_file,
+            cancel_upload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

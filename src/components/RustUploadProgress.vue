@@ -47,7 +47,7 @@
     <div v-if="isExpanded" class="max-h-96 overflow-y-auto">
       <div
         v-for="upload in uploads"
-        :key="upload.id"
+        :key="upload.uploadId"
         class="px-4 py-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors"
       >
         <!-- File name and status -->
@@ -58,7 +58,7 @@
             </div>
             <div class="text-xs text-muted-foreground mt-0.5">
               {{ formatSize(upload.fileSize) }}
-              <span v-if="upload.isMultipart" class="ml-1">" Multipart</span>
+              <span v-if="upload.totalParts > 0" class="ml-1">• Multipart</span>
             </div>
           </div>
 
@@ -80,19 +80,14 @@
               class="text-muted-foreground flex-shrink-0"
             />
             <PhSpinner
-              v-else-if="upload.status === 'uploading'"
+              v-else-if="upload.status === 'uploading' || upload.status === 'starting' || upload.status === 'pending'"
               :size="20"
               class="text-primary animate-spin flex-shrink-0"
             />
-            <PhClock
-              v-else
-              :size="20"
-              class="text-muted-foreground flex-shrink-0"
-            />
 
             <button
-              v-if="upload.status === 'uploading' || upload.status === 'pending'"
-              @click="cancelUpload(upload.id)"
+              v-if="upload.status === 'uploading' || upload.status === 'pending' || upload.status === 'starting'"
+              @click="cancelUpload(upload.uploadId)"
               class="p-1 rounded hover:bg-destructive/10 text-destructive transition-colors"
               :title="t('cancel')"
             >
@@ -102,27 +97,30 @@
         </div>
 
         <!-- Progress bar -->
-        <div v-if="upload.progress && upload.status === 'uploading'" class="space-y-1">
+        <div v-if="upload.status === 'uploading' || upload.status === 'starting'" class="space-y-1">
           <div class="w-full bg-muted rounded-full h-1.5 overflow-hidden">
             <div
               class="bg-primary h-full transition-all duration-300 ease-out"
-              :style="{ width: `${upload.progress.percentage}%` }"
+              :style="{ width: `${upload.percentage}%` }"
             />
           </div>
           <div class="flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              {{ Math.round(upload.progress.percentage) }}%
-              <span v-if="upload.isMultipart" class="ml-1">
-                ({{ upload.progress.uploadedParts }}/{{ upload.progress.totalParts }} parts)
+              {{ Math.round(upload.percentage) }}%
+              <span v-if="upload.totalParts > 0" class="ml-1">
+                ({{ upload.uploadedParts }}/{{ upload.totalParts }} parts)
               </span>
             </span>
-            <span>{{ formatSize(upload.progress.uploadedBytes) }}</span>
+            <span>{{ formatSize(upload.uploadedBytes) }}</span>
           </div>
           <div
-            v-if="getTimeRemaining(upload.id)"
+            v-if="getTimeRemaining(upload.uploadId)"
             class="text-xs text-muted-foreground"
           >
-            {{ formatTime(getTimeRemaining(upload.id)!) }} {{ t('remaining') }}
+            {{ formatTime(getTimeRemaining(upload.uploadId)!) }} {{ t('remaining') }}
+            <span v-if="getUploadSpeed(upload.uploadId)" class="ml-1">
+              • {{ formatSize(getUploadSpeed(upload.uploadId)!) }}/s
+            </span>
           </div>
         </div>
 
@@ -139,7 +137,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useUploadManager } from '../composables/useUploadManager'
+import { useRustUploadManager } from '../composables/useRustUploadManager'
 import { useI18n } from '../composables/useI18n'
 import { formatSize, formatTime } from '../utils/formatters'
 import {
@@ -150,7 +148,6 @@ import {
   PhXCircle,
   PhProhibit,
   PhSpinner,
-  PhClock,
   PhX,
 } from '@phosphor-icons/vue'
 
@@ -161,10 +158,11 @@ const {
   uploadCount,
   totalTimeRemaining,
   getTimeRemaining,
+  getUploadSpeed,
   cancelUpload,
   cancelAll,
   clearFinished,
-} = useUploadManager()
+} = useRustUploadManager()
 
 const isExpanded = ref(true)
 </script>

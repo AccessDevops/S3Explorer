@@ -1,12 +1,24 @@
 use crate::models::*;
 use crate::profiles::ProfileStore;
 use crate::s3_adapter::S3Adapter;
-use std::sync::Mutex;
-use tauri::State;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Manager, State};
+use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
+
+// Upload task handle with metadata for cancellation
+pub struct UploadTask {
+    handle: JoinHandle<()>,
+    cancel_tx: broadcast::Sender<()>,
+    file_name: String,
+    file_size: u64,
+}
 
 // Global profile store state
 pub struct AppState {
     pub profiles: Mutex<ProfileStore>,
+    pub active_uploads: Arc<Mutex<HashMap<String, UploadTask>>>,
 }
 
 impl AppState {
@@ -14,6 +26,7 @@ impl AppState {
         let profiles = ProfileStore::load().unwrap_or_default();
         Self {
             profiles: Mutex::new(profiles),
+            active_uploads: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -557,4 +570,327 @@ pub async fn multipart_upload_abort(
         .multipart_upload_abort(&bucket, &key, &upload_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Upload a file directly from disk using multipart upload with progress events
+/// This is a non-blocking command that spawns a background task
+#[tauri::command]
+pub async fn upload_file(
+    app: AppHandle,
+    profile_id: String,
+    bucket: String,
+    key: String,
+    file_path: String,
+    content_type: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    // Generate unique upload ID
+    let upload_id = uuid::Uuid::new_v4().to_string();
+
+    // Get file metadata
+    let metadata = std::fs::metadata(&file_path)
+        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let file_size = metadata.len();
+
+    // Extract file name from path
+    let file_name = std::path::Path::new(&file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Get profile
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = broadcast::channel::<()>(1);
+
+    // Clone data for the background task
+    let upload_id_clone = upload_id.clone();
+    let file_name_clone = file_name.clone();
+    let active_uploads = state.active_uploads.clone();
+
+    // Emit initial pending event
+    let _ = app.emit_all(
+        "upload:progress",
+        UploadProgressEvent {
+            upload_id: upload_id.clone(),
+            file_name: file_name.clone(),
+            file_size,
+            uploaded_bytes: 0,
+            uploaded_parts: 0,
+            total_parts: 0,
+            percentage: 0.0,
+            status: UploadStatus::Pending,
+            error: None,
+        },
+    );
+
+    // Spawn background upload task
+    let handle = tokio::spawn(async move {
+        // Emit starting event
+        let _ = app.emit_all(
+            "upload:progress",
+            UploadProgressEvent {
+                upload_id: upload_id_clone.clone(),
+                file_name: file_name_clone.clone(),
+                file_size,
+                uploaded_bytes: 0,
+                uploaded_parts: 0,
+                total_parts: 0,
+                percentage: 0.0,
+                status: UploadStatus::Starting,
+                error: None,
+            },
+        );
+
+        // Perform the upload
+        match perform_upload(
+            app.clone(),
+            upload_id_clone.clone(),
+            file_name_clone.clone(),
+            file_path,
+            file_size,
+            profile,
+            bucket,
+            key,
+            content_type,
+            &mut cancel_rx,
+        )
+        .await
+        {
+            Ok(_) => {
+                // Emit completion event
+                let _ = app.emit_all(
+                    "upload:progress",
+                    UploadProgressEvent {
+                        upload_id: upload_id_clone.clone(),
+                        file_name: file_name_clone.clone(),
+                        file_size,
+                        uploaded_bytes: file_size,
+                        uploaded_parts: 0,
+                        total_parts: 0,
+                        percentage: 100.0,
+                        status: UploadStatus::Completed,
+                        error: None,
+                    },
+                );
+            }
+            Err(e) => {
+                // Check if it was cancelled
+                let is_cancelled = e.contains("cancelled") || e.contains("Cancelled");
+
+                // Emit error/cancelled event
+                let _ = app.emit_all(
+                    "upload:progress",
+                    UploadProgressEvent {
+                        upload_id: upload_id_clone.clone(),
+                        file_name: file_name_clone.clone(),
+                        file_size,
+                        uploaded_bytes: 0,
+                        uploaded_parts: 0,
+                        total_parts: 0,
+                        percentage: 0.0,
+                        status: if is_cancelled {
+                            UploadStatus::Cancelled
+                        } else {
+                            UploadStatus::Failed
+                        },
+                        error: Some(e),
+                    },
+                );
+            }
+        }
+
+        // Remove from active uploads
+        if let Ok(mut uploads) = active_uploads.lock() {
+            uploads.remove(&upload_id_clone);
+        }
+    });
+
+    // Store the task handle and cancellation sender with metadata
+    {
+        let mut uploads = state.active_uploads.lock().map_err(|e| e.to_string())?;
+        uploads.insert(
+            upload_id.clone(),
+            UploadTask {
+                handle,
+                cancel_tx,
+                file_name,
+                file_size,
+            },
+        );
+    }
+
+    Ok(upload_id)
+}
+
+/// Cancel an active upload
+#[tauri::command]
+pub async fn cancel_upload(
+    app: AppHandle,
+    upload_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut uploads = state.active_uploads.lock().map_err(|e| e.to_string())?;
+
+    if let Some(task) = uploads.remove(&upload_id) {
+        // Emit cancelled event immediately (before aborting the task)
+        let _ = app.emit_all(
+            "upload:progress",
+            UploadProgressEvent {
+                upload_id: upload_id.clone(),
+                file_name: task.file_name.clone(),
+                file_size: task.file_size,
+                uploaded_bytes: 0,
+                uploaded_parts: 0,
+                total_parts: 0,
+                percentage: 0.0,
+                status: UploadStatus::Cancelled,
+                error: Some("Upload cancelled by user".to_string()),
+            },
+        );
+
+        // Send cancellation signal
+        let _ = task.cancel_tx.send(());
+
+        // Abort the task
+        task.handle.abort();
+
+        Ok(())
+    } else {
+        Err(format!("Upload {} not found", upload_id))
+    }
+}
+
+/// Perform the actual upload (helper function)
+#[allow(clippy::too_many_arguments)]
+async fn perform_upload(
+    app: AppHandle,
+    upload_id: String,
+    file_name: String,
+    file_path: String,
+    file_size: u64,
+    profile: Profile,
+    bucket: String,
+    key: String,
+    content_type: Option<String>,
+    cancel_rx: &mut broadcast::Receiver<()>,
+) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::{Read, Seek, SeekFrom};
+
+    // Multipart threshold: 50MB
+    const MULTIPART_THRESHOLD: u64 = 50 * 1024 * 1024;
+    const PART_SIZE: u64 = 10 * 1024 * 1024; // 10MB parts
+
+    // Create S3 adapter
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Check if we should use multipart upload
+    if file_size < MULTIPART_THRESHOLD {
+        // Simple upload for small files
+        let mut file = File::open(&file_path).map_err(|e| format!("Failed to open file: {}", e))?;
+
+        let mut buffer = Vec::with_capacity(file_size as usize);
+        file.read_to_end(&mut buffer)
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+
+        // Check for cancellation
+        if cancel_rx.try_recv().is_ok() {
+            return Err("Upload cancelled".to_string());
+        }
+
+        // Upload
+        adapter
+            .put_object(&bucket, &key, buffer, content_type)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    } else {
+        // Multipart upload for large files
+        let total_parts = file_size.div_ceil(PART_SIZE) as i32;
+
+        // Start multipart upload
+        let init_response = adapter
+            .multipart_upload_start(&bucket, &key, content_type)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let s3_upload_id = init_response.upload_id.clone();
+
+        // Upload parts
+        let mut completed_parts = Vec::new();
+        let mut uploaded_bytes: u64 = 0;
+
+        for part_number in 1..=total_parts {
+            // Check for cancellation before each part
+            if cancel_rx.try_recv().is_ok() {
+                // Abort the multipart upload
+                let _ = adapter
+                    .multipart_upload_abort(&bucket, &key, &s3_upload_id)
+                    .await;
+                return Err("Upload cancelled".to_string());
+            }
+
+            // Calculate offset and length for this part
+            let offset = (part_number - 1) as u64 * PART_SIZE;
+            let length = std::cmp::min(PART_SIZE, file_size - offset);
+
+            // Read chunk from file
+            let mut file =
+                File::open(&file_path).map_err(|e| format!("Failed to open file: {}", e))?;
+
+            file.seek(SeekFrom::Start(offset))
+                .map_err(|e| format!("Failed to seek file: {}", e))?;
+
+            let mut buffer = vec![0u8; length as usize];
+            file.read_exact(&mut buffer)
+                .map_err(|e| format!("Failed to read file chunk: {}", e))?;
+
+            // Upload part
+            let part_response = adapter
+                .multipart_upload_part(&bucket, &key, &s3_upload_id, part_number, buffer)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            completed_parts.push(CompletedPart {
+                part_number,
+                e_tag: part_response.e_tag,
+            });
+
+            uploaded_bytes += length;
+
+            // Emit progress event
+            let percentage = (uploaded_bytes as f64 / file_size as f64) * 100.0;
+            let _ = app.emit_all(
+                "upload:progress",
+                UploadProgressEvent {
+                    upload_id: upload_id.clone(),
+                    file_name: file_name.clone(),
+                    file_size,
+                    uploaded_bytes,
+                    uploaded_parts: part_number,
+                    total_parts,
+                    percentage,
+                    status: UploadStatus::Uploading,
+                    error: None,
+                },
+            );
+        }
+
+        // Complete multipart upload
+        adapter
+            .multipart_upload_complete(&bucket, &key, &s3_upload_id, completed_parts)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
 }
