@@ -2223,6 +2223,11 @@ function getFileIcon(key: string): { icon: any; colorClass: string } {
 async function uploadFilesHandler() {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
+  // Capture values to prevent null reference errors during async operations
+  const profileId = appStore.currentProfile.id
+  const bucket = appStore.currentBucket
+  const prefix = appStore.currentPrefix
+
   // Use Tauri dialog to select files
   const selected = await open({
     multiple: true,
@@ -2254,27 +2259,33 @@ async function uploadFilesHandler() {
     return contentTypes[ext]
   }
 
-  // Upload each file using Rust command (non-blocking)
-  for (const filePath of filePaths) {
+  // Queue all uploads immediately - Rust upload manager handles concurrency
+  // Don't wait for uploads to start, just queue them all
+  filePaths.forEach((filePath) => {
     const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file'
-    const key = appStore.currentPrefix + fileName
+    const key = prefix + fileName
     const contentType = getContentType(fileName)
 
-    try {
-      // Start upload (Rust handles everything: multipart, progress, etc.)
-      await rustUploadManager.startUpload(
-        appStore.currentProfile.id,
-        appStore.currentBucket,
-        key,
-        filePath,
-        contentType
-      )
-      logger.debug(`✓ Started upload: ${fileName}`)
-    } catch (e) {
-      logger.error(`✗ Failed to start upload ${fileName}:`, e)
-      toast.error(`Upload failed: ${fileName}`)
-    }
-  }
+    // Fire and forget - just queue the upload
+    rustUploadManager.startUpload(
+      profileId,
+      bucket,
+      key,
+      filePath,
+      contentType
+    ).catch((e) => {
+      // Ignore cancellation errors (user clicked cancel)
+      if (e && e.message && e.message.includes('cancelled')) {
+        return
+      }
+      logger.error(`✗ Failed to queue upload ${fileName}:`, e)
+      toast.error(`Failed to queue: ${fileName}`)
+    })
+  })
+
+  // Show immediate feedback
+  logger.debug(`Queued ${filePaths.length} file(s) for upload`)
+  toast.success(`Queued ${filePaths.length} file(s) for upload`)
 
   // Objects will be reloaded automatically when uploads complete
 }
@@ -2688,6 +2699,11 @@ async function handleFileDrop(paths: string[]) {
     return
   }
 
+  // Capture values to prevent null reference errors during async operations
+  const profileId = appStore.currentProfile.id
+  const bucket = appStore.currentBucket
+  const prefix = appStore.currentPrefix
+
   logger.debug(`Starting upload of ${paths.length} file(s) via drag & drop...`)
 
   // Helper to detect content type from file extension
@@ -2711,30 +2727,35 @@ async function handleFileDrop(paths: string[]) {
     return contentTypes[ext]
   }
 
-  // Upload each file using Rust command (non-blocking)
-  for (const filePath of paths) {
+  // Queue all uploads immediately - Rust upload manager handles concurrency
+  // Don't wait for uploads to start, just queue them all
+  paths.forEach((filePath) => {
     const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file'
-    const key = appStore.currentPrefix + fileName
+    const key = prefix + fileName
     const contentType = getContentType(fileName)
 
-    try {
-      // Start upload (Rust handles everything: file reading, multipart, progress, etc.)
-      await rustUploadManager.startUpload(
-        appStore.currentProfile.id,
-        appStore.currentBucket,
-        key,
-        filePath,
-        contentType
-      )
-      logger.debug(`✓ Started upload: ${fileName}`)
-    } catch (e) {
-      logger.error(`✗ Failed to start upload ${fileName}:`, e)
-      toast.error(`Upload failed: ${fileName}`)
-    }
-  }
+    // Fire and forget - just queue the upload
+    rustUploadManager.startUpload(
+      profileId,
+      bucket,
+      key,
+      filePath,
+      contentType
+    ).catch((e) => {
+      // Ignore cancellation errors (user clicked cancel)
+      if (e && e.message && e.message.includes('cancelled')) {
+        return
+      }
+      logger.error(`✗ Failed to queue upload ${fileName}:`, e)
+      toast.error(`Failed to queue: ${fileName}`)
+    })
+  })
+
+  // Show immediate feedback
+  logger.debug(`Queued ${paths.length} file(s) for drag & drop upload`)
+  toast.success(`Queued ${paths.length} file(s) for upload`)
 
   // Objects will be reloaded automatically when uploads complete
-  logger.debug(`Drag & drop upload initiated for ${paths.length} file(s)`)
 }
 
 // Context menu functions

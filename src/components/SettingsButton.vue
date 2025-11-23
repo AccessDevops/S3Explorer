@@ -79,6 +79,22 @@
             />
           </div>
 
+          <!-- Max Concurrent Uploads Setting -->
+          <div class="space-y-3">
+            <div>
+              <label class="text-sm font-medium">{{ t('maxConcurrentUploads') }}</label>
+              <p class="text-sm text-muted-foreground">{{ t('maxConcurrentUploadsDescription') }}</p>
+            </div>
+            <Input
+              type="number"
+              :model-value="settingsStore.maxConcurrentUploads"
+              @update:model-value="(val) => settingsStore.setMaxConcurrentUploads(Number(val))"
+              min="1"
+              max="30"
+              class="max-w-xs"
+            />
+          </div>
+
           <!-- View Mode Setting -->
           <div class="space-y-3">
             <div>

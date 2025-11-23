@@ -11,6 +11,9 @@
           <span class="font-medium text-sm">
             {{ t('upload') }} ({{ uploadCount.active }}/{{ uploadCount.total }})
           </span>
+          <span v-if="uploadCount.queued > 0" class="text-xs text-muted-foreground">
+            +{{ uploadCount.queued }} {{ t('queued') }}
+          </span>
         </div>
         <div v-if="hasActiveUploads && totalTimeRemaining > 0" class="text-xs text-muted-foreground ml-7">
           {{ formatTime(totalTimeRemaining) }} {{ t('remaining') }}
@@ -79,6 +82,11 @@
               :size="20"
               class="text-muted-foreground flex-shrink-0"
             />
+            <PhClock
+              v-else-if="upload.status === 'queued'"
+              :size="20"
+              class="text-muted-foreground flex-shrink-0"
+            />
             <PhSpinner
               v-else-if="upload.status === 'uploading' || upload.status === 'starting' || upload.status === 'pending'"
               :size="20"
@@ -86,7 +94,7 @@
             />
 
             <button
-              v-if="upload.status === 'uploading' || upload.status === 'pending' || upload.status === 'starting'"
+              v-if="upload.status === 'uploading' || upload.status === 'pending' || upload.status === 'starting' || upload.status === 'queued'"
               @click="cancelUpload(upload.uploadId)"
               class="p-1 rounded hover:bg-destructive/10 text-destructive transition-colors"
               :title="t('cancel')"
@@ -147,6 +155,7 @@ import {
   PhCheckCircle,
   PhXCircle,
   PhProhibit,
+  PhClock,
   PhSpinner,
   PhX,
 } from '@phosphor-icons/vue'

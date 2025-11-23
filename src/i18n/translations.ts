@@ -117,6 +117,7 @@ export const translations = {
     calculating: 'Calculating...',
     saving: 'Saving...',
     remaining: 'remaining',
+    queued: 'queued',
     estimating: 'Estimating...',
 
     // Toast messages
@@ -223,6 +224,8 @@ export const translations = {
     searchLimitReached: 'Search limit reached: showing first {0} results',
     batchSizeSetting: 'Batch Size',
     batchSizeDescription: 'Number of objects to load per page (1-1000)',
+    maxConcurrentUploads: 'Max Concurrent Uploads',
+    maxConcurrentUploadsDescription: 'Maximum number of files to upload simultaneously (1-30)',
 
     // Pagination
     loadMore: 'Load More',
@@ -376,6 +379,7 @@ export const translations = {
     calculating: 'Calcul...',
     saving: 'Enregistrement...',
     remaining: 'restant',
+    queued: 'en attente',
     estimating: 'Estimation...',
 
     // Messages Toast
@@ -486,6 +490,8 @@ export const translations = {
     searchLimitReached: 'Limite de recherche atteinte : affichage des {0} premiers résultats',
     batchSizeSetting: 'Taille des lots',
     batchSizeDescription: "Nombre d'objets à charger par page (1-1000)",
+    maxConcurrentUploads: 'Uploads simultanés max',
+    maxConcurrentUploadsDescription: 'Nombre maximum de fichiers à uploader en même temps (1-30)',
 
     // Pagination
     loadMore: 'Charger plus',
@@ -638,6 +644,7 @@ export const translations = {
     calculating: '计算中...',
     saving: '保存中...',
     remaining: '剩余',
+    queued: '排队中',
     estimating: '估计中...',
 
     // Toast消息
@@ -744,6 +751,8 @@ export const translations = {
     searchLimitReached: '已达到搜索限制：显示前 {0} 个结果',
     batchSizeSetting: '批次大小',
     batchSizeDescription: '每页加载的对象数 (1-1000)',
+    maxConcurrentUploads: '最大并发上传数',
+    maxConcurrentUploadsDescription: '同时上传的最大文件数 (1-30)',
 
     // 分页
     loadMore: '加载更多',
@@ -896,6 +905,7 @@ export const translations = {
     calculating: 'गणना जारी है...',
     saving: 'सहेजा जा रहा है...',
     remaining: 'शेष',
+    queued: 'कतार में',
     estimating: 'अनुमान लगाया जा रहा है...',
 
     // Toast संदेश
@@ -1002,6 +1012,8 @@ export const translations = {
     searchLimitReached: 'खोज सीमा पहुँच गई: पहले {0} परिणाम दिखा रहे हैं',
     batchSizeSetting: 'बैच आकार',
     batchSizeDescription: 'प्रति पृष्ठ लोड करने के लिए ऑब्जेक्ट्स की संख्या (1-1000)',
+    maxConcurrentUploads: 'अधिकतम समवर्ती अपलोड',
+    maxConcurrentUploadsDescription: 'एक साथ अपलोड करने के लिए अधिकतम फ़ाइलों की संख्या (1-30)',
 
     // पेजिनेशन
     loadMore: 'अधिक लोड करें',
@@ -1154,6 +1166,7 @@ export const translations = {
     calculating: 'Calculando...',
     saving: 'Guardando...',
     remaining: 'restante',
+    queued: 'en cola',
     estimating: 'Estimando...',
 
     // Mensajes Toast
@@ -1260,6 +1273,8 @@ export const translations = {
     searchLimitReached: 'Límite de búsqueda alcanzado: mostrando los primeros {0} resultados',
     batchSizeSetting: 'Tamaño de lote',
     batchSizeDescription: 'Número de objetos a cargar por página (1-1000)',
+    maxConcurrentUploads: 'Cargas simultáneas máximas',
+    maxConcurrentUploadsDescription: 'Número máximo de archivos para cargar simultáneamente (1-30)',
 
     // Paginación
     loadMore: 'Cargar más',
@@ -1412,6 +1427,7 @@ export const translations = {
     calculating: 'جاري الحساب...',
     saving: 'جاري الحفظ...',
     remaining: 'متبقي',
+    queued: 'في قائمة الانتظار',
     estimating: 'جاري التقدير...',
 
     // رسائل Toast
@@ -1518,6 +1534,8 @@ export const translations = {
     searchLimitReached: 'تم الوصول إلى حد البحث: عرض أول {0} نتائج',
     batchSizeSetting: 'حجم الدفعة',
     batchSizeDescription: 'عدد الكائنات المراد تحميلها لكل صفحة (1-1000)',
+    maxConcurrentUploads: 'الحد الأقصى للتحميلات المتزامنة',
+    maxConcurrentUploadsDescription: 'الحد الأقصى لعدد الملفات للتحميل في نفس الوقت (1-30)',
 
     // الترقيم
     loadMore: 'تحميل المزيد',
@@ -1670,6 +1688,7 @@ export const translations = {
     calculating: 'গণনা করা হচ্ছে...',
     saving: 'সংরক্ষণ করা হচ্ছে...',
     remaining: 'অবশিষ্ট',
+    queued: 'সারিতে',
     estimating: 'অনুমান করা হচ্ছে...',
 
     // Toast বার্তা
@@ -1776,6 +1795,8 @@ export const translations = {
     searchLimitReached: 'অনুসন্ধান সীমা পৌঁছেছে: প্রথম {0} ফলাফল দেখানো হচ্ছে',
     batchSizeSetting: 'ব্যাচ আকার',
     batchSizeDescription: 'প্রতি পৃষ্ঠায় লোড করার জন্য অবজেক্টস সংখ্যা (1-1000)',
+    maxConcurrentUploads: 'সর্বোচ্চ সমসাময়িক আপলোড',
+    maxConcurrentUploadsDescription: 'একসাথে আপলোড করার জন্য সর্বোচ্চ ফাইল সংখ্যা (1-30)',
 
     // পৃষ্ঠাবিভাজন
     loadMore: 'আরও লোড করুন',
@@ -1928,6 +1949,7 @@ export const translations = {
     calculating: 'Calculando...',
     saving: 'Salvando...',
     remaining: 'restante',
+    queued: 'na fila',
     estimating: 'Estimando...',
 
     // Mensagens Toast
@@ -2034,6 +2056,8 @@ export const translations = {
     searchLimitReached: 'Limite de pesquisa atingido: mostrando os primeiros {0} resultados',
     batchSizeSetting: 'Tamanho do lote',
     batchSizeDescription: 'Número de objetos a carregar por página (1-1000)',
+    maxConcurrentUploads: 'Uploads simultâneos máximos',
+    maxConcurrentUploadsDescription: 'Número máximo de arquivos para fazer upload simultaneamente (1-30)',
 
     // Paginação
     loadMore: 'Carregar mais',
@@ -2186,6 +2210,7 @@ export const translations = {
     calculating: 'Menghitung...',
     saving: 'Menyimpan...',
     remaining: 'sisa',
+    queued: 'antrian',
     estimating: 'Memperkirakan...',
 
     // Pesan Toast
@@ -2292,6 +2317,8 @@ export const translations = {
     searchLimitReached: 'Batas pencarian tercapai: menampilkan {0} hasil pertama',
     batchSizeSetting: 'Ukuran Batch',
     batchSizeDescription: 'Jumlah objek untuk dimuat per halaman (1-1000)',
+    maxConcurrentUploads: 'Unggahan Bersamaan Maksimal',
+    maxConcurrentUploadsDescription: 'Jumlah maksimal file untuk diunggah secara bersamaan (1-30)',
 
     // Pagination
     loadMore: 'Muat Lebih Banyak',
@@ -2444,6 +2471,7 @@ export const translations = {
     calculating: 'Se calculează...',
     saving: 'Se salvează...',
     remaining: 'rămas',
+    queued: 'în coadă',
     estimating: 'Se estimează...',
 
     // Mesaje Toast
@@ -2550,6 +2578,8 @@ export const translations = {
     searchLimitReached: 'Limită de căutare atinsă: se afișează primele {0} rezultate',
     batchSizeSetting: 'Dimensiune lot',
     batchSizeDescription: 'Număr de obiecte de încărcat pe pagină (1-1000)',
+    maxConcurrentUploads: 'Încărcări simultane maxime',
+    maxConcurrentUploadsDescription: 'Număr maxim de fișiere de încărcat simultan (1-30)',
 
     // Paginare
     loadMore: 'Încarcă mai mult',

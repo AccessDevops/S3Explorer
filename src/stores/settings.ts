@@ -10,6 +10,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const batchSize = ref(250)
   const searchMode = ref<SearchMode>('local')
   const viewMode = ref<ViewMode>('normal')
+  const maxConcurrentUploads = ref(10)
+  const multipartThresholdMB = ref(50) // MB - files larger than this use multipart upload
 
   // Load settings from localStorage on init
   const loadSettings = () => {
@@ -34,6 +36,22 @@ export const useSettingsStore = defineStore('settings', () => {
     const savedViewMode = localStorage.getItem('app-viewMode') as ViewMode | null
     if (savedViewMode === 'normal' || savedViewMode === 'compact') {
       viewMode.value = savedViewMode
+    }
+
+    const savedMaxConcurrentUploads = localStorage.getItem('app-maxConcurrentUploads')
+    if (savedMaxConcurrentUploads) {
+      const max = parseInt(savedMaxConcurrentUploads, 10)
+      if (!isNaN(max) && max >= 1 && max <= 30) {
+        maxConcurrentUploads.value = max
+      }
+    }
+
+    const savedMultipartThreshold = localStorage.getItem('app-multipartThresholdMB')
+    if (savedMultipartThreshold) {
+      const threshold = parseInt(savedMultipartThreshold, 10)
+      if (!isNaN(threshold) && threshold >= 5 && threshold <= 1000) {
+        multipartThresholdMB.value = threshold
+      }
     }
   }
 
@@ -64,15 +82,37 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-viewMode', mode)
   }
 
+  // Save max concurrent uploads to localStorage
+  const setMaxConcurrentUploads = (max: number) => {
+    if (max < 1 || max > 30) {
+      throw new Error('Max concurrent uploads must be between 1 and 30')
+    }
+    maxConcurrentUploads.value = max
+    localStorage.setItem('app-maxConcurrentUploads', String(max))
+  }
+
+  // Save multipart threshold to localStorage
+  const setMultipartThresholdMB = (threshold: number) => {
+    if (threshold < 5 || threshold > 1000) {
+      throw new Error('Multipart threshold must be between 5 and 1000 MB')
+    }
+    multipartThresholdMB.value = threshold
+    localStorage.setItem('app-multipartThresholdMB', String(threshold))
+  }
+
   return {
     language,
     batchSize,
     searchMode,
     viewMode,
+    maxConcurrentUploads,
+    multipartThresholdMB,
     loadSettings,
     setLanguage,
     setBatchSize,
     setSearchMode,
     setViewMode,
+    setMaxConcurrentUploads,
+    setMultipartThresholdMB,
   }
 })

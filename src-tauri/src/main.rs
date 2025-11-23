@@ -35,11 +35,6 @@ fn main() {
             delete_folder,
             list_object_versions,
             get_file_size,
-            multipart_upload_start,
-            multipart_upload_part,
-            multipart_upload_part_from_file,
-            multipart_upload_complete,
-            multipart_upload_abort,
             upload_file,
             cancel_upload,
         ])

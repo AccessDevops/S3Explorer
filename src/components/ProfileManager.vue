@@ -2,7 +2,7 @@
   <div class="p-4 border-b border-white/10">
     <div class="flex justify-between items-center mb-4">
       <h3 class="text-lg font-semibold">{{ t('connections') }}</h3>
-      <Button size="sm" @click="showAddModal = true">
+      <Button size="sm" @click="openAddModal">
         <span class="mr-1">+</span> {{ t('add') }}
       </Button>
     </div>
@@ -298,6 +298,14 @@ watch(
   }
 )
 
+// Reset form when modal closes (cleanup)
+watch(showAddModal, (isOpen) => {
+  if (!isOpen) {
+    // Modal closed, reset form for next use
+    resetForm()
+  }
+})
+
 // Check if form is valid
 const isFormValid = computed(() => {
   return (
@@ -323,6 +331,11 @@ function resetForm() {
   validationErrors.region = ''
   testResult.value = null
   editingProfile.value = null
+}
+
+function openAddModal() {
+  resetForm()
+  showAddModal.value = true
 }
 
 async function saveProfile() {

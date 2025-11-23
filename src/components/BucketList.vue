@@ -138,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '../stores/app'
 import { useI18n } from '../composables/useI18n'
 import { Button } from '@/components/ui/button'
@@ -153,9 +153,11 @@ import {
 import { createBucket, getBucketAcl, calculateBucketStats } from '../services/tauri'
 import { formatSize, formatDate } from '../utils/formatters'
 import { logger } from '../utils/logger'
+import { useBucketStatsInvalidation } from '../composables/useBucketStatsInvalidation'
 
 const appStore = useAppStore()
 const { t } = useI18n()
+const { getInvalidationTimestamp, clearInvalidation } = useBucketStatsInvalidation()
 
 interface BucketStats {
   size: number
@@ -222,13 +224,24 @@ async function createBucketHandler() {
 async function loadBucketStats(bucketName: string, forceRefresh = false) {
   if (!appStore.currentProfile) return
 
-  // Check cache first
+  // Check if bucket was invalidated (upload/delete happened)
+  const invalidationTimestamp = getInvalidationTimestamp(bucketName)
   const cached = statsCache.value[bucketName]
   const now = Date.now()
 
-  if (!forceRefresh && cached && now - cached.timestamp < STATS_CACHE_TTL) {
+  // Force refresh if:
+  // 1. Explicitly requested (forceRefresh = true)
+  // 2. Bucket was invalidated after our cache timestamp
+  // 3. Cache expired (> STATS_CACHE_TTL)
+  const shouldRefresh =
+    forceRefresh ||
+    (cached && invalidationTimestamp > cached.timestamp) ||
+    !cached ||
+    now - (cached?.timestamp || 0) >= STATS_CACHE_TTL
+
+  if (!shouldRefresh) {
     // Use cached stats
-    bucketStats.value[bucketName] = cached.stats
+    bucketStats.value[bucketName] = cached!.stats
     return
   }
 
@@ -253,6 +266,9 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
       stats,
       timestamp: now,
     }
+
+    // Clear invalidation flag after successful refresh
+    clearInvalidation(bucketName)
   } catch (e) {
     logger.error(`Failed to load stats for bucket ${bucketName}`, e)
   } finally {
@@ -319,6 +335,33 @@ watch(
     }
   }
 )
+
+// Watch for invalidations and refresh affected buckets automatically
+// Checks every 1 second for invalidated buckets
+let invalidationCheckInterval: number | null = null
+
+onMounted(() => {
+  invalidationCheckInterval = window.setInterval(() => {
+    if (!appStore.currentProfile) return
+
+    // Check each bucket for invalidation
+    appStore.buckets.forEach(async (bucket) => {
+      const invalidationTimestamp = getInvalidationTimestamp(bucket.name)
+      const cached = statsCache.value[bucket.name]
+
+      // Refresh if invalidated after our cache
+      if (cached && invalidationTimestamp > cached.timestamp) {
+        await loadBucketStats(bucket.name)
+      }
+    })
+  }, 1000) // Check every second
+})
+
+onUnmounted(() => {
+  if (invalidationCheckInterval !== null) {
+    clearInterval(invalidationCheckInterval)
+  }
+})
 
 // Load stats on mount if buckets are already loaded
 onMounted(async () => {

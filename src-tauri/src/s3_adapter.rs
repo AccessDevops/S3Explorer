@@ -6,12 +6,14 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Region};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{BucketLocationConstraint, CreateBucketConfiguration};
 use aws_sdk_s3::Client;
 use std::time::Duration;
 
 /// S3 Client Adapter that supports multiple providers
 pub struct S3Adapter {
     client: Client,
+    region: String,
 }
 
 impl S3Adapter {
@@ -36,7 +38,15 @@ impl S3Adapter {
             .await;
 
         // Build S3-specific config
-        let mut s3_config_builder = S3ConfigBuilder::from(&aws_config);
+        let mut s3_config_builder = S3ConfigBuilder::from(&aws_config)
+            // Increase timeouts for large file uploads
+            .timeout_config(
+                aws_sdk_s3::config::timeout::TimeoutConfig::builder()
+                    .connect_timeout(Duration::from_secs(10)) // Connection timeout
+                    .read_timeout(Duration::from_secs(300)) // Read timeout (5 minutes)
+                    .operation_timeout(Duration::from_secs(600)) // Total operation timeout (10 minutes)
+                    .build(),
+            );
 
         // Custom endpoint support
         if let Some(endpoint) = &profile.endpoint {
@@ -51,18 +61,38 @@ impl S3Adapter {
         let s3_config = s3_config_builder.build();
         let client = Client::from_conf(s3_config);
 
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            region: profile.region.clone(),
+        })
     }
 
     /// Test connection by listing buckets
     /// If connection fails and path_style is not enabled, tries again with path_style
+    /// Timeout: 30 seconds
     pub async fn test_connection_with_profile(
         profile: &Profile,
     ) -> Result<TestConnectionResponse, AppError> {
+        use tokio::time::{timeout, Duration};
+
         let adapter = Self::from_profile(profile).await?;
 
-        match adapter.client.list_buckets().send().await {
-            Ok(output) => {
+        // Test connection with 30-second timeout
+        let timeout_duration = Duration::from_secs(30);
+        let result = timeout(timeout_duration, adapter.client.list_buckets().send()).await;
+
+        match result {
+            // Timeout elapsed
+            Err(_) => {
+                Ok(TestConnectionResponse {
+                    success: false,
+                    message: "Connection timed out after 30 seconds. Please check your endpoint and network connection.".to_string(),
+                    bucket_count: None,
+                    suggest_path_style: None,
+                })
+            }
+            // Request completed within timeout
+            Ok(Ok(output)) => {
                 let bucket_count = output.buckets().len();
                 Ok(TestConnectionResponse {
                     success: true,
@@ -71,7 +101,8 @@ impl S3Adapter {
                     suggest_path_style: None,
                 })
             }
-            Err(e) => {
+            // Request completed but failed
+            Ok(Err(e)) => {
                 let error_str = e.to_string();
 
                 // If path_style is not enabled and we have a custom endpoint, try with path_style
@@ -80,11 +111,12 @@ impl S3Adapter {
                     let mut path_style_profile = profile.clone();
                     path_style_profile.path_style = true;
 
-                    // Try again with path_style enabled
+                    // Try again with path_style enabled (also with timeout)
                     let path_style_adapter = Self::from_profile(&path_style_profile).await?;
+                    let retry_result = timeout(timeout_duration, path_style_adapter.client.list_buckets().send()).await;
 
-                    match path_style_adapter.client.list_buckets().send().await {
-                        Ok(output) => {
+                    match retry_result {
+                        Ok(Ok(output)) => {
                             // Success with path_style! Suggest enabling it
                             let bucket_count = output.buckets().len();
                             Ok(TestConnectionResponse {
@@ -94,7 +126,7 @@ impl S3Adapter {
                                 suggest_path_style: Some(true),
                             })
                         }
-                        Err(_) => {
+                        _ => {
                             // Failed with both, return original error
                             Ok(TestConnectionResponse {
                                 success: false,
@@ -140,9 +172,19 @@ impl S3Adapter {
 
     /// Create a new bucket
     pub async fn create_bucket(&self, bucket_name: &str) -> Result<(), AppError> {
-        self.client
-            .create_bucket()
-            .bucket(bucket_name)
+        let mut request = self.client.create_bucket().bucket(bucket_name);
+
+        // AWS S3 requires CreateBucketConfiguration for regions other than us-east-1
+        // MinIO also requires this for proper bucket creation
+        if self.region != "us-east-1" {
+            let location_constraint = BucketLocationConstraint::from(self.region.as_str());
+            let bucket_config = CreateBucketConfiguration::builder()
+                .location_constraint(location_constraint)
+                .build();
+            request = request.create_bucket_configuration(bucket_config);
+        }
+
+        request
             .send()
             .await
             .map_err(|e| AppError::S3Error(format!("Failed to create bucket: {}", e)))?;
