@@ -13,7 +13,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const maxConcurrentUploads = ref(10)
   const multipartThresholdMB = ref(50) // MB - files larger than this use multipart upload
   const indexValidityHours = ref(8) // hours - index older than this is considered expired
-  const indexAutoBuildThreshold = ref(1000) // objects - buckets with fewer objects auto-build index
+  const indexAutoBuildThreshold = ref(12000) // objects - buckets with fewer objects auto-build index
 
   // Load settings from localStorage on init
   const loadSettings = () => {
@@ -68,7 +68,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const savedIndexAutoBuildThreshold = localStorage.getItem('app-indexAutoBuildThreshold')
     if (savedIndexAutoBuildThreshold) {
       const threshold = parseInt(savedIndexAutoBuildThreshold, 10)
-      if (!isNaN(threshold) && threshold >= 100 && threshold <= 10000) {
+      if (!isNaN(threshold) && threshold >= 100 && threshold <= 100000) {
         indexAutoBuildThreshold.value = threshold
       }
     }
@@ -131,8 +131,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save index auto-build threshold to localStorage
   const setIndexAutoBuildThreshold = (threshold: number) => {
-    if (threshold < 100 || threshold > 10000) {
-      throw new Error('Index auto-build threshold must be between 100 and 10000 objects')
+    if (threshold < 100 || threshold > 100000) {
+      throw new Error('Index auto-build threshold must be between 100 and 100000 objects')
     }
     indexAutoBuildThreshold.value = threshold
     localStorage.setItem('app-indexAutoBuildThreshold', String(threshold))

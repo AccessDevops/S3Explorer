@@ -3463,6 +3463,7 @@ async function renameFileHandler() {
       last_modified: new Date().toISOString(),
       e_tag: '',
       storage_class: rename.object.storage_class || 'STANDARD',
+      is_folder: false,
     }
     appStore.addObject(newObj)
 
@@ -3716,6 +3717,7 @@ async function createFileHandler() {
       last_modified: new Date().toISOString(),
       e_tag: '',
       storage_class: 'STANDARD',
+      is_folder: false,
     }
     appStore.addObject(newObj)
 
@@ -3773,6 +3775,7 @@ function handleUploadCompleted(event: Event) {
     last_modified: new Date().toISOString(),
     e_tag: '',
     storage_class: 'STANDARD',
+    is_folder: false,
   }
 
   appStore.addObject(newObj)
@@ -3831,6 +3834,7 @@ async function pasteFile() {
       last_modified: new Date().toISOString(),
       e_tag: '',
       storage_class: sourceObj.storage_class || 'STANDARD',
+      is_folder: false,
     }
     appStore.addObject(newObj)
   } catch (e) {

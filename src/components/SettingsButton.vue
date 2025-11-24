@@ -262,7 +262,7 @@
                     :model-value="settingsStore.indexAutoBuildThreshold"
                     @update:model-value="(val) => settingsStore.setIndexAutoBuildThreshold(Number(val))"
                     min="100"
-                    max="10000"
+                    max="100000"
                     class="flex-1"
                   />
                   <span class="text-sm text-muted-foreground">{{ t('objects') }}</span>
