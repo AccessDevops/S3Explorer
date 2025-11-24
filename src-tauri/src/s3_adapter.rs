@@ -334,6 +334,9 @@ impl S3Adapter {
             request = request.continuation_token(token);
         }
 
+        // Set max_keys to respect user's batch size configuration
+        // S3's max_keys limits the TOTAL count of objects + common_prefixes (folders)
+        // If folders are not visible in the first batch, user can use "Load More"
         if let Some(max) = max_keys {
             request = request.max_keys(max);
         }

@@ -12,6 +12,46 @@ docker run -d --name minio -p 9000:9000 -p 9001:9001 \
 minio/minio server /data --console-address ":9001"
 ```
 
+
+```bash
+# Create a self-signed certificate
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
+
+# 2. Convert Certificate to Windows Format (if needed)
+# If you only have .pem files, convert them to .pfx:
+openssl pkcs12 -export -out certificate.pfx -inkey key.pem -in cert.pem -passout pass:your_password
+
+
+# 3. Install SignTool on macOS
+# Since you're on macOS, you need to use a tool that can sign Windows executables. You have two options:
+# Option A: Use osslsigncode (easier)
+brew install osslsigncode
+# Option B: Use Windows SDK tools via Docker
+# This is more complex but more official. I'd recommend Option A.
+
+# 4. Sign Your Portable .exe
+# Using osslsigncode:
+osslsigncode sign -pkcs12 certificate.pfx -pass your_password \
+  -n "Your App Name" \
+  -i "https://yourwebsite.com" \
+  -t http://timestamp.sectigo.com \
+  -in your-app.exe \
+  -out your-app-signed.exe
+
+# Important flags explained:
+# -pkcs12: Path to your .pfx certificate
+# -pass: Your certificate password
+# -n: App name (shows in Windows properties)
+# -i: URL (optional, shows in Windows properties)
+# -t: Timestamp server (crucial—prevents expiration issues)
+# -in: Your original executable
+# -out: Output signed executable
+
+# 5. Verify the Signature
+bashosslsigncode verify -in your-app-signed.exe
+
+```
+
 ## Features
 
 ### Connection Management

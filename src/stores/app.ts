@@ -23,13 +23,21 @@ export const useAppStore = defineStore('app', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const loadingProgress = ref({ show: false, message: '' })
+  const loadedPagesCount = ref(1) // Track number of loaded pages for smart refresh
 
-  // Navigation history for back button
-  const navigationHistory = ref<Array<{ bucket: string; prefix: string }>>([])
+  // Navigation history for back button (includes objects/folders state)
+  const navigationHistory = ref<Array<{
+    bucket: string
+    prefix: string
+    objects: S3Object[]
+    folders: string[]
+    continuationToken?: string
+  }>>([])
 
   // Preload cache for next page (performance optimization)
   const preloadedNextPage = ref<{
     objects: S3Object[]
+    folders: string[] // Common prefixes (folders)
     continuationToken?: string
     forToken?: string // The continuation token this preload is for
   } | null>(null)
@@ -131,15 +139,19 @@ export const useAppStore = defineStore('app', () => {
     continuationToken.value = undefined
     preloadedNextPage.value = null // Clear preload cache on bucket change
     navigationHistory.value = [] // Clear history on bucket change
+    loadedPagesCount.value = 1 // Reset page counter
   }
 
   // Navigate to a folder
   function navigateToFolder(prefix: string) {
-    // Save current state to history before navigating
+    // Save current state to history before navigating (including objects/folders)
     if (currentBucket.value) {
       navigationHistory.value.push({
         bucket: currentBucket.value,
         prefix: currentPrefix.value,
+        objects: [...objects.value], // Save current objects
+        folders: [...folders.value], // Save current folders
+        continuationToken: continuationToken.value,
       })
 
       // Limit history to 50 entries to prevent memory overflow
@@ -154,6 +166,7 @@ export const useAppStore = defineStore('app', () => {
     folders.value = []
     continuationToken.value = undefined
     preloadedNextPage.value = null // Clear preload cache on navigation
+    loadedPagesCount.value = 1 // Reset page counter
   }
 
   // Go back to previous folder
@@ -169,8 +182,9 @@ export const useAppStore = defineStore('app', () => {
     folders.value = []
     continuationToken.value = undefined
     preloadedNextPage.value = null
+    loadedPagesCount.value = 1 // Reset page counter
 
-    // Load the previous folder's content
+    // Reload from S3 to ensure fresh data (no cache for sync with server)
     await loadObjects()
   }
 
@@ -193,6 +207,7 @@ export const useAppStore = defineStore('app', () => {
 
       preloadedNextPage.value = {
         objects: response.objects,
+        folders: response.common_prefixes,
         continuationToken: response.continuation_token,
         forToken: continuationToken.value,
       }
@@ -227,6 +242,17 @@ export const useAppStore = defineStore('app', () => {
       if (isUsingCache) {
         // Use preloaded data - instant!
         objects.value.push(...cachedPage!.objects)
+
+        // Merge folders from cache
+        if (cachedPage!.folders && cachedPage!.folders.length > 0) {
+          const newFolders = cachedPage!.folders.filter(
+            folder => !folders.value.includes(folder)
+          )
+          if (newFolders.length > 0) {
+            folders.value.push(...newFolders)
+          }
+        }
+
         continuationToken.value = cachedPage!.continuationToken
         preloadedNextPage.value = null
         isLoading.value = false
@@ -235,6 +261,10 @@ export const useAppStore = defineStore('app', () => {
         if (continuationToken.value) {
           preloadNextPage()
         }
+
+        // Track loaded pages for smart refresh (cached load is always loadMore=true)
+        loadedPagesCount.value++
+
         return
       }
 
@@ -250,7 +280,21 @@ export const useAppStore = defineStore('app', () => {
 
       if (loadMore) {
         objects.value.push(...response.objects)
+        logger.debug(`[DEBUG] loadObjects(loadMore=true): Got ${response.objects.length} objects, ${response.common_prefixes.length} folders`)
+        // Update folders on each page - some S3 implementations may return different folders per page
+        if (response.common_prefixes && response.common_prefixes.length > 0) {
+          // Merge folders: add new ones that aren't already in the list
+          const newFolders = response.common_prefixes.filter(
+            folder => !folders.value.includes(folder)
+          )
+          if (newFolders.length > 0) {
+            logger.debug(`[DEBUG] Adding ${newFolders.length} new folders:`, newFolders)
+            folders.value.push(...newFolders)
+          }
+        }
       } else {
+        logger.debug(`[DEBUG] loadObjects(loadMore=false): Got ${response.objects.length} objects, ${response.common_prefixes.length} folders`)
+        logger.debug(`[DEBUG] Folders from API:`, response.common_prefixes)
         objects.value = response.objects
         folders.value = response.common_prefixes
         // Clear preload cache when navigating to new folder
@@ -275,6 +319,13 @@ export const useAppStore = defineStore('app', () => {
       if (continuationToken.value) {
         preloadNextPage()
       }
+
+      // Track loaded pages for smart refresh
+      if (loadMore) {
+        loadedPagesCount.value++
+      } else {
+        loadedPagesCount.value = 1
+      }
     } catch (e) {
       error.value = AppError.fromUnknown(e).message
       loadingProgress.value.show = false // Hide progress bar on error
@@ -288,12 +339,70 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // Refresh current view
-  async function refresh() {
-    if (currentBucket.value) {
-      await loadObjects()
-    } else if (currentProfile.value) {
-      await loadBuckets()
+  // Reload current view (reset pagination and load first page from S3)
+  async function reloadCurrentView() {
+    if (!currentProfile.value || !currentBucket.value) return
+
+    // Reset pagination state
+    continuationToken.value = undefined
+    objects.value = []
+    folders.value = []
+    preloadedNextPage.value = null
+    loadedPagesCount.value = 1 // Reset page counter
+
+    // Load first page from S3 to ensure synchronization with server
+    await loadObjects()
+  }
+
+  // Remove object from store (optimistic deletion)
+  function removeObject(key: string) {
+    const index = objects.value.findIndex(obj => obj.key === key)
+    if (index !== -1) {
+      objects.value.splice(index, 1)
+      logger.debug(`[Optimistic] Removed object: ${key}`)
+    }
+  }
+
+  // Remove folder from store (optimistic deletion)
+  function removeFolder(folder: string) {
+    const index = folders.value.indexOf(folder)
+    if (index !== -1) {
+      folders.value.splice(index, 1)
+      logger.debug(`[Optimistic] Removed folder: ${folder}`)
+    }
+  }
+
+  // Add object to store (optimistic creation)
+  function addObject(obj: S3Object) {
+    // Check if object already exists (avoid duplicates)
+    const exists = objects.value.find(o => o.key === obj.key)
+    if (!exists) {
+      objects.value.push(obj)
+      logger.debug(`[Optimistic] Added object: ${obj.key}`)
+    } else {
+      logger.debug(`[Optimistic] Object already exists: ${obj.key}`)
+    }
+  }
+
+  // Add folder to store (optimistic creation)
+  function addFolder(folder: string) {
+    // Check if folder already exists (avoid duplicates)
+    if (!folders.value.includes(folder)) {
+      folders.value.push(folder)
+      logger.debug(`[Optimistic] Added folder: ${folder}`)
+    } else {
+      logger.debug(`[Optimistic] Folder already exists: ${folder}`)
+    }
+  }
+
+  // Update object in store (for metadata changes)
+  function updateObject(key: string, updates: Partial<S3Object>) {
+    const index = objects.value.findIndex(obj => obj.key === key)
+    if (index !== -1) {
+      objects.value[index] = { ...objects.value[index], ...updates }
+      logger.debug(`[Optimistic] Updated object: ${key}`)
+    } else {
+      logger.debug(`[Optimistic] Object not found for update: ${key}`)
     }
   }
 
@@ -316,6 +425,7 @@ export const useAppStore = defineStore('app', () => {
     error,
     loadingProgress,
     navigationHistory,
+    loadedPagesCount,
     // Computed
     hasProfile,
     hasBucket,
@@ -330,7 +440,12 @@ export const useAppStore = defineStore('app', () => {
     navigateToFolder,
     goBack,
     loadObjects,
-    refresh,
+    reloadCurrentView,
+    removeObject,
+    removeFolder,
+    addObject,
+    addFolder,
+    updateObject,
     clearError,
   }
 })

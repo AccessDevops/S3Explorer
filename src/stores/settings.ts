@@ -12,6 +12,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewMode = ref<ViewMode>('normal')
   const maxConcurrentUploads = ref(10)
   const multipartThresholdMB = ref(50) // MB - files larger than this use multipart upload
+  const indexValidityHours = ref(8) // hours - index older than this is considered expired
+  const indexAutoBuildThreshold = ref(1000) // objects - buckets with fewer objects auto-build index
 
   // Load settings from localStorage on init
   const loadSettings = () => {
@@ -23,7 +25,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const savedBatchSize = localStorage.getItem('app-batchSize')
     if (savedBatchSize) {
       const size = parseInt(savedBatchSize, 10)
-      if (!isNaN(size) && size >= 1 && size <= 1000) {
+      // Enforce max 500 to prevent UI performance issues with large lists
+      if (!isNaN(size) && size >= 1 && size <= 500) {
         batchSize.value = size
       }
     }
@@ -53,6 +56,22 @@ export const useSettingsStore = defineStore('settings', () => {
         multipartThresholdMB.value = threshold
       }
     }
+
+    const savedIndexValidityHours = localStorage.getItem('app-indexValidityHours')
+    if (savedIndexValidityHours) {
+      const hours = parseInt(savedIndexValidityHours, 10)
+      if (!isNaN(hours) && hours >= 1 && hours <= 48) {
+        indexValidityHours.value = hours
+      }
+    }
+
+    const savedIndexAutoBuildThreshold = localStorage.getItem('app-indexAutoBuildThreshold')
+    if (savedIndexAutoBuildThreshold) {
+      const threshold = parseInt(savedIndexAutoBuildThreshold, 10)
+      if (!isNaN(threshold) && threshold >= 100 && threshold <= 10000) {
+        indexAutoBuildThreshold.value = threshold
+      }
+    }
   }
 
   // Save language to localStorage
@@ -63,8 +82,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save batch size to localStorage
   const setBatchSize = (size: number) => {
-    if (size < 1 || size > 1000) {
-      throw new Error('Batch size must be between 1 and 1000')
+    // Enforce max 500 to prevent UI performance issues with large lists
+    if (size < 1 || size > 500) {
+      throw new Error('Batch size must be between 1 and 500')
     }
     batchSize.value = size
     localStorage.setItem('app-batchSize', String(size))
@@ -100,6 +120,24 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-multipartThresholdMB', String(threshold))
   }
 
+  // Save index validity hours to localStorage
+  const setIndexValidityHours = (hours: number) => {
+    if (hours < 1 || hours > 48) {
+      throw new Error('Index validity must be between 1 and 48 hours')
+    }
+    indexValidityHours.value = hours
+    localStorage.setItem('app-indexValidityHours', String(hours))
+  }
+
+  // Save index auto-build threshold to localStorage
+  const setIndexAutoBuildThreshold = (threshold: number) => {
+    if (threshold < 100 || threshold > 10000) {
+      throw new Error('Index auto-build threshold must be between 100 and 10000 objects')
+    }
+    indexAutoBuildThreshold.value = threshold
+    localStorage.setItem('app-indexAutoBuildThreshold', String(threshold))
+  }
+
   return {
     language,
     batchSize,
@@ -107,6 +145,8 @@ export const useSettingsStore = defineStore('settings', () => {
     viewMode,
     maxConcurrentUploads,
     multipartThresholdMB,
+    indexValidityHours,
+    indexAutoBuildThreshold,
     loadSettings,
     setLanguage,
     setBatchSize,
@@ -114,5 +154,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setViewMode,
     setMaxConcurrentUploads,
     setMultipartThresholdMB,
+    setIndexValidityHours,
+    setIndexAutoBuildThreshold,
   }
 })

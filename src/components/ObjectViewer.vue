@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { useToast } from '../composables/useToast'
 import { useI18n } from '../composables/useI18n'
@@ -414,16 +414,42 @@ const textContent = computed(() => {
   return decoder.decode(content.value)
 })
 
-const imageUrl = computed(() => {
-  if (!content.value || !isImage.value) return ''
-  const blob = new Blob([content.value], { type: contentType.value || undefined })
-  return URL.createObjectURL(blob)
-})
+// Blob URLs stored as refs to allow proper cleanup
+const imageUrl = ref<string>('')
+const pdfUrl = ref<string>('')
 
-const pdfUrl = computed(() => {
-  if (!content.value || !isPdf.value) return ''
-  const blob = new Blob([content.value], { type: 'application/pdf' })
-  return URL.createObjectURL(blob)
+// Function to revoke Blob URLs and free memory
+function revokeObjectUrls() {
+  if (imageUrl.value) {
+    URL.revokeObjectURL(imageUrl.value)
+    imageUrl.value = ''
+  }
+  if (pdfUrl.value) {
+    URL.revokeObjectURL(pdfUrl.value)
+    pdfUrl.value = ''
+  }
+}
+
+// Watch for content changes and create/revoke Blob URLs accordingly
+watch([content, contentType, isImage, isPdf], () => {
+  // Revoke old URLs first to free memory
+  revokeObjectUrls()
+
+  // Create new Blob URLs if needed
+  if (content.value && isImage.value) {
+    const blob = new Blob([content.value as BlobPart], { type: contentType.value || undefined })
+    imageUrl.value = URL.createObjectURL(blob)
+  }
+
+  if (content.value && isPdf.value) {
+    const blob = new Blob([content.value as BlobPart], { type: 'application/pdf' })
+    pdfUrl.value = URL.createObjectURL(blob)
+  }
+}, { immediate: true })
+
+// Cleanup on component unmount to prevent memory leaks
+onUnmounted(() => {
+  revokeObjectUrls()
 })
 
 function startEditing() {

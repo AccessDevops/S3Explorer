@@ -7,7 +7,8 @@ export function useI18n() {
 
   const t = computed(() => {
     return (key: TranslationKey, ...args: (string | number)[]): string => {
-      let translation = translations[settingsStore.language][key] || key
+      const currentLang = translations[settingsStore.language] as Record<string, string>
+      let translation = currentLang[key as string] || key
 
       // Replace placeholders {0}, {1}, etc. with provided arguments
       args.forEach((arg, index) => {

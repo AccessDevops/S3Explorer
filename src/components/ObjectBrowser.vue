@@ -50,33 +50,20 @@
 
       <div class="relative flex-1 max-w-md">
         <Input
+          ref="searchInputRef"
           v-model="searchQuery"
           :placeholder="t('searchFilesAndFolders')"
           class="w-full pr-20"
         />
 
-        <!-- Loading spinner -->
-        <div v-if="isSearching" class="absolute right-10 top-1/2 -translate-y-1/2">
-          <svg
-            class="animate-spin h-5 w-5 text-primary"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
+        <!-- Index button (left of search mode button) -->
+        <div class="absolute right-12 top-1/2 -translate-y-1/2" ref="indexButtonContainerRef">
+          <IndexButton
+            v-if="appStore.currentProfile && appStore.currentBucket"
+            :profileId="appStore.currentProfile.id"
+            :bucketName="appStore.currentBucket"
+            @indexChanged="handleIndexChanged"
+          />
         </div>
 
         <!-- Settings button -->
@@ -107,20 +94,48 @@
 
         <!-- Search progress bar -->
         <div
-          v-if="isSearching && searchQuery.trim()"
+          v-if="searchQuery.trim()"
           class="absolute top-full left-0 right-0 mt-1 bg-card border rounded-md shadow-sm overflow-hidden z-10"
         >
           <div class="flex items-center justify-between px-3 py-2 text-sm">
-            <div class="flex items-center gap-3">
+            <!-- INDEX SEARCH MODE -->
+            <div v-if="useIndexForSearch" class="flex items-center gap-3">
               <div class="flex items-center gap-2">
-                <span class="text-muted-foreground">{{ t('searching') }}...</span>
+                <span class="text-green-600 dark:text-green-400 font-medium">⚡ {{ t('indexSearch') }}</span>
                 <span class="font-medium text-primary">{{ searchProgress }} {{ t('found') }}</span>
               </div>
               <div class="text-xs text-muted-foreground">
-                {{ t('pagesScanned', searchPagesScanned) }}
+                {{ t('instant') }} ({{ searchDuration }}ms)
               </div>
             </div>
-            <Button size="sm" variant="ghost" @click="stopSearch" :title="t('stopSearch')">
+
+            <!-- LIVE SEARCH MODE -->
+            <div v-else class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
+                <span v-if="isSearching" class="text-muted-foreground">{{ t('searching') }}...</span>
+                <span v-else class="text-green-600 dark:text-green-400 font-medium">✓ {{ t('searchComplete') }}</span>
+                <span class="font-medium text-primary">{{ searchProgress }} {{ t('found') }}</span>
+              </div>
+              <div v-if="isSearching" class="text-xs text-muted-foreground">
+                {{ t('pagesScanned', searchPagesScanned) }}
+              </div>
+              <!-- Search Speed (only during search) -->
+              <div v-if="isSearching && searchSpeed > 0" class="text-xs text-muted-foreground">
+                {{ searchSpeed.toLocaleString() }} obj/s
+              </div>
+              <!-- Time Remaining (only during search) -->
+              <div
+                v-if="isSearching && searchTimeRemaining > 0"
+                class="text-xs text-muted-foreground"
+              >
+                ~{{ formatTime(searchTimeRemaining) }} {{ t('remaining') }}
+              </div>
+              <!-- Final stats (when search is complete) -->
+              <div v-if="!isSearching && searchPagesScanned > 0" class="text-xs text-muted-foreground">
+                {{ t('scannedPages', searchPagesScanned) }}
+              </div>
+            </div>
+            <Button v-if="isSearching" size="sm" variant="ghost" @click="stopSearch" :title="t('stopSearch')">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="16"
@@ -136,8 +151,8 @@
               </svg>
             </Button>
           </div>
-          <!-- Animated progress bar -->
-          <div class="h-1 bg-muted overflow-hidden">
+          <!-- Animated progress bar (only during active search) -->
+          <div v-if="isSearching" class="h-1 bg-muted overflow-hidden">
             <div class="h-full bg-primary animate-progress-indeterminate"></div>
           </div>
         </div>
@@ -150,7 +165,7 @@
         <Button size="sm" variant="outline" @click="modals.createFolder = true">{{
           t('newFolder')
         }}</Button>
-        <Button size="sm" variant="ghost" @click="appStore.loadObjects()" :title="t('refresh')"
+        <Button size="sm" variant="ghost" @click="reloadAllPages()" :title="t('refresh')"
           >⟳</Button
         >
       </div>
@@ -205,6 +220,7 @@
       @mousemove="handleSelectionMouseMove"
       @mouseup="handleSelectionMouseUp"
       @mouseleave="handleSelectionMouseUp"
+      @scroll="virtualScroll.handleScroll"
     >
       <!-- Selection box -->
       <div :style="selectionBoxStyle"></div>
@@ -247,10 +263,14 @@
           <!-- Actions space -->
         </div>
 
-        <!-- Folders -->
-        <div
-          v-for="(folder, index) in filteredFolders"
-          :key="folder"
+        <!-- Virtual scroll container (spacer maintains total scroll height) -->
+        <div :style="virtualScroll.spacerStyle.value">
+          <!-- Virtual scroll content wrapper (applies offset for visible items) -->
+          <div :style="virtualScroll.contentStyle.value">
+            <!-- Folders (virtualized) -->
+            <div
+              v-for="(folder, index) in virtualVisibleFolders"
+              :key="folder"
           :class="[
             'flex items-center rounded-md hover:bg-accent transition-colors cursor-pointer group select-none relative z-0',
             rowPadding,
@@ -295,8 +315,8 @@
           </div>
         </div>
 
-        <!-- Files -->
-        <template v-for="(obj, index) in filteredObjects" :key="obj.key">
+        <!-- Files (virtualized) -->
+        <template v-for="(obj, index) in virtualVisibleObjects" :key="obj.key">
           <div
             :class="[
               'flex items-center rounded-md hover:bg-accent transition-colors group cursor-pointer select-none relative',
@@ -521,6 +541,10 @@
             </div>
           </div>
         </template>
+          </div>
+          <!-- End virtual scroll content wrapper -->
+        </div>
+        <!-- End virtual scroll container -->
 
         <!-- Empty State Hint (Background) -->
         <div
@@ -592,14 +616,24 @@
           </div>
         </div>
 
-        <!-- Load More button -->
+        <!-- Load More / Load All buttons -->
         <div
           v-if="!searchQuery.trim() && appStore.continuationToken && !appStore.isLoading"
           class="p-4 text-center"
         >
-          <Button variant="outline" @click="appStore.loadObjects(true)" class="w-full max-w-md">
-            {{ t('loadMore') }}
-          </Button>
+          <div class="flex gap-2 justify-center max-w-md mx-auto">
+            <Button variant="outline" @click="appStore.loadObjects(true)" class="flex-1">
+              {{ t('loadMore') }}
+            </Button>
+            <Button
+              variant="default"
+              @click="loadAllObjects"
+              class="flex-1"
+              :title="t('loadAllObjectsInFolder')"
+            >
+              {{ t('loadAll') }}
+            </Button>
+          </div>
           <div class="text-sm text-muted-foreground mt-2">
             {{ t('showing') }} {{ appStore.objects.length }} {{ t('objects') }}
           </div>
@@ -695,7 +729,11 @@
           {{ filteredFolders.length !== 1 ? t('folders') : t('folderName') }},
           {{ filteredObjects.length }}
           {{ filteredObjects.length !== 1 ? t('files') : t('fileName') }})
-          <span v-if="appStore.continuationToken" class="text-primary ml-2"
+          <span
+            v-if="appStore.continuationToken"
+            class="text-primary ml-2 cursor-pointer hover:underline"
+            @click="loadAllObjects"
+            :title="t('clickToLoadAll')"
             >• {{ t('moreAvailable') }}</span
           >
         </span>
@@ -1090,6 +1128,177 @@
         </div>
       </div>
     </Transition>
+
+    <!-- Index Build Prompt Popover (Non-blocking) -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 translate-y-1"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 translate-y-1"
+    >
+      <Card
+        v-if="showIndexBuildPrompt"
+        class="fixed z-50 w-96 shadow-lg border-2 border-primary/20"
+        :style="indexPopoverStyle"
+      >
+        <div class="p-4 space-y-4">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-start gap-3 flex-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-blue-500 flex-shrink-0 mt-0.5"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4" />
+                <path d="M12 8h.01" />
+              </svg>
+              <div class="flex-1">
+                <h4 class="font-semibold text-sm mb-1">{{ t('buildSearchIndex') }}?</h4>
+                <p class="text-xs text-muted-foreground">
+                  {{
+                    indexPromptObjectCount === -1
+                      ? t('buildIndexLargeBucket')
+                      : t('buildIndexPromptMessage', indexPromptObjectCount.toLocaleString())
+                  }}
+                </p>
+                <p class="text-xs text-muted-foreground mt-2">
+                  {{ t('estimatedIndexSize') }}: <span class="font-medium">{{ indexPromptEstimatedSize }}</span>
+                </p>
+              </div>
+            </div>
+            <button
+              @click="showIndexBuildPrompt = false"
+              class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+              :title="t('close')"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <Button variant="outline" size="sm" @click="showIndexBuildPrompt = false" class="flex-1">
+              {{ t('skip') }}
+            </Button>
+            <Button size="sm" @click="handleBuildIndexFromPrompt" class="flex-1">
+              {{ t('buildIndex') }}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </Transition>
+
+    <!-- Index Update Prompt Popover (Non-blocking) -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 translate-y-1"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 translate-y-1"
+    >
+      <Card
+        v-if="showIndexUpdatePrompt"
+        class="fixed z-50 w-96 shadow-lg border-2 border-orange-500/20"
+        :style="indexPopoverStyle"
+      >
+        <div class="p-4 space-y-4">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-start gap-3 flex-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-orange-500 flex-shrink-0 mt-0.5"
+              >
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M16 16h5v5" />
+              </svg>
+              <div class="flex-1">
+                <h4 class="font-semibold text-sm mb-1">{{ t('updateSearchIndex') }}?</h4>
+                <p class="text-xs text-muted-foreground">
+                  {{ t('indexExpiredMessage') }}
+                </p>
+                <div class="text-xs text-muted-foreground mt-2 space-y-1">
+                  <p>
+                    {{ t('indexedObjects') }}: <span class="font-medium">{{ indexUpdateIndexCount.toLocaleString() }}</span>
+                  </p>
+                  <p>
+                    {{ t('currentObjects') }}:
+                    <span class="font-medium">
+                      {{ indexUpdateCurrentCount === -1 ? `> ${settingsStore.indexAutoBuildThreshold}` : indexUpdateCurrentCount.toLocaleString() }}
+                    </span>
+                  </p>
+                  <p v-if="indexUpdateObjectDiff !== 0" :class="indexUpdateObjectDiff > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                    {{ t('difference') }}: <span class="font-medium">{{ indexUpdateObjectDiff > 0 ? '+' : '' }}{{ indexUpdateObjectDiff.toLocaleString() }}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              @click="showIndexUpdatePrompt = false"
+              class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+              :title="t('close')"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <Button variant="outline" size="sm" @click="showIndexUpdatePrompt = false" class="flex-1">
+              {{ t('later') }}
+            </Button>
+            <Button size="sm" @click="handleUpdateIndexFromPrompt" class="flex-1">
+              {{ t('updateIndex') }}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </Transition>
+
+    <!-- Upload progress popup -->
+    <RustUploadProgress />
   </div>
 </template>
 
@@ -1102,7 +1311,9 @@ import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
 import { useToast } from '../composables/useToast'
 import { useSwipeBack } from '../composables/useSwipeBack'
-import { formatSize, formatDate } from '../utils/formatters'
+import { useSearchIndex } from '../composables/useSearchIndex'
+import { useVirtualScroll } from '../composables/useVirtualScroll'
+import { formatSize, formatDate, formatTime } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { validateObjectKey } from '../utils/validators'
 import { useRustUploadManager } from '../composables/useRustUploadManager'
@@ -1123,6 +1334,8 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { S3Object, ObjectVersion } from '../types'
 import ObjectViewer from './ObjectViewer.vue'
 import ContextMenu from './ContextMenu.vue'
+import IndexButton from './IndexButton.vue'
+import RustUploadProgress from './RustUploadProgress.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -1227,6 +1440,7 @@ const { t } = useI18n()
 const dialog = useDialog()
 const toast = useToast()
 const rustUploadManager = useRustUploadManager()
+const searchIndex = useSearchIndex()
 
 // Grouped reactive state - Modals
 const modals = reactive({
@@ -1431,6 +1645,8 @@ const emptyContextMenu = ref<{ show: boolean; x: number; y: number }>({
 
 // Search refs (will be migrated to search grouped state)
 const searchQuery = ref('')
+const searchInputRef = ref<HTMLInputElement | null>(null)
+const indexButtonContainerRef = ref<HTMLDivElement | null>(null)
 const isSearching = ref(false)
 const searchProgress = ref(0)
 const searchPagesScanned = ref(0)
@@ -1439,6 +1655,25 @@ const showSearchSettings = ref(false)
 const searchSettingsButtonRef = ref<HTMLButtonElement | null>(null)
 const globalSearchResults = ref<S3Object[]>([])
 const searchDebounceTimer = ref<number | null>(null)
+const searchStartTime = ref(0)
+const searchObjectsProcessed = ref(0)
+const searchSpeed = ref(0) // objects per second
+const searchTimeRemaining = ref(0) // seconds
+const searchDuration = ref(0) // milliseconds - actual time taken for search
+const useIndexForSearch = ref(false) // whether current search uses index
+const hasSearchIndex = ref(false) // whether an index is available for current bucket
+const currentIndexSize = ref(0) // number of objects in the current index
+
+// Index build prompt refs
+const showIndexBuildPrompt = ref(false)
+const indexPromptObjectCount = ref(0)
+const indexPromptEstimatedSize = ref('')
+
+// Index update prompt refs (for expired indexes)
+const showIndexUpdatePrompt = ref(false)
+const indexUpdateObjectDiff = ref(0)
+const indexUpdateCurrentCount = ref(0)
+const indexUpdateIndexCount = ref(0)
 
 // Selection refs (will be migrated to selection grouped state)
 const selectedItems = ref(new Set<string>())
@@ -1612,6 +1847,52 @@ const filteredObjects = computed(() => {
   return objects
 })
 
+// Virtual scroll optimization
+// Combine folders and objects into a single array for virtualization
+type VirtualItem =
+  | { type: 'folder'; key: string }
+  | { type: 'object'; data: S3Object }
+
+const allVirtualItems = computed<VirtualItem[]>(() => {
+  const items: VirtualItem[] = []
+
+  // Add folders first
+  filteredFolders.value.forEach(folder => {
+    items.push({ type: 'folder', key: folder })
+  })
+
+  // Then add objects
+  filteredObjects.value.forEach(obj => {
+    items.push({ type: 'object', data: obj })
+  })
+
+  return items
+})
+
+// Item height based on view mode
+const virtualItemHeight = computed(() => isCompactView.value ? 40 : 48)
+
+// Initialize virtual scroll
+const virtualScroll = useVirtualScroll({
+  items: allVirtualItems,
+  itemHeight: virtualItemHeight,
+  containerHeight: 600, // Fixed container height
+  buffer: 10, // Render 10 extra items before/after visible area
+})
+
+// Extract visible folders and objects from virtual items
+const virtualVisibleFolders = computed(() => {
+  return virtualScroll.visibleItems.value
+    .filter((item): item is { type: 'folder'; key: string } => item.type === 'folder')
+    .map(item => item.key)
+})
+
+const virtualVisibleObjects = computed(() => {
+  return virtualScroll.visibleItems.value
+    .filter((item): item is { type: 'object'; data: S3Object } => item.type === 'object')
+    .map(item => item.data)
+})
+
 const totalItemsCount = computed(() => {
   return filteredFolders.value.length + filteredObjects.value.length
 })
@@ -1640,6 +1921,19 @@ const totalSize = computed(() => {
 const showEmptyStateHint = computed(() => {
   const totalItems = filteredFolders.value.length + filteredObjects.value.length
   return totalItems < 5 && !searchQuery.value.trim() && !isDraggingOver.value
+})
+
+// Calculate popover position relative to index button
+const indexPopoverStyle = computed(() => {
+  if (!indexButtonContainerRef.value) {
+    return { top: '80px', right: '20px' }
+  }
+
+  const rect = indexButtonContainerRef.value.getBoundingClientRect()
+  return {
+    top: `${rect.bottom + 8}px`,
+    right: `${window.innerWidth - rect.right}px`,
+  }
 })
 
 const selectedTotalSize = computed(() => {
@@ -1708,6 +2002,70 @@ function selectSearchMode(mode: 'local' | 'global') {
   showSearchSettings.value = false
 }
 
+// Handle index changed event from IndexButton
+async function handleIndexChanged() {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  // Reload index status
+  const hasIndex = await searchIndex.hasValidIndex(
+    appStore.currentProfile.id,
+    appStore.currentBucket
+  )
+  hasSearchIndex.value = hasIndex
+
+  if (hasIndex) {
+    const metadata = await searchIndex.getIndexMetadata(
+      appStore.currentProfile.id,
+      appStore.currentBucket
+    )
+    if (metadata) {
+      currentIndexSize.value = metadata.totalObjects
+    }
+  } else {
+    currentIndexSize.value = 0
+  }
+}
+
+// Handle build index from prompt
+async function handleBuildIndexFromPrompt() {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  showIndexBuildPrompt.value = false
+
+  try {
+    const index = await searchIndex.buildIndex(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      settingsStore.batchSize
+    )
+    hasSearchIndex.value = true
+    currentIndexSize.value = index.totalObjects
+  } catch (error) {
+    logger.error('Failed to build index:', error)
+    toast.error(t('errorOccurred'))
+  }
+}
+
+// Handle update index from prompt (expired index)
+async function handleUpdateIndexFromPrompt() {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  showIndexUpdatePrompt.value = false
+
+  try {
+    const index = await searchIndex.rebuildIndex(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      settingsStore.batchSize
+    )
+    hasSearchIndex.value = true
+    currentIndexSize.value = index.totalObjects
+  } catch (error) {
+    logger.error('Failed to update index:', error)
+    toast.error(t('errorOccurred'))
+  }
+}
+
 const searchSettingsMenuStyle = computed(() => {
   if (!searchSettingsButtonRef.value) {
     return { top: '0px', left: '0px' }
@@ -1733,6 +2091,7 @@ watch(searchQuery, async (query) => {
   if (!query.trim()) {
     globalSearchResults.value = []
     isSearching.value = false
+    useIndexForSearch.value = false
     return
   }
 
@@ -1749,13 +2108,59 @@ watch(searchQuery, async (query) => {
       globalSearchResults.value = []
       searchProgress.value = 0
       searchPagesScanned.value = 0
+      searchObjectsProcessed.value = 0
+      searchSpeed.value = 0
+      searchTimeRemaining.value = 0
+      searchStartTime.value = Date.now()
+
+      const searchPrefix = settingsStore.searchMode === 'local' ? appStore.currentPrefix : ''
+
+      // ═══════════════════════════════════════════════════════════
+      // TRY INDEX FIRST (ultra-fast if available and valid)
+      // ═══════════════════════════════════════════════════════════
+
+      const hasIndex = await searchIndex.hasValidIndex(profileId, bucket)
+      const indexEnabled = searchIndex.isIndexEnabled(profileId, bucket)
+
+      if (hasIndex && indexEnabled) {
+        logger.debug('Using search index for instant results')
+        useIndexForSearch.value = true
+
+        const index = await searchIndex.loadIndex(profileId, bucket)
+        if (index) {
+          const results = searchIndex.searchInIndex(index, query, searchPrefix)
+          globalSearchResults.value = results
+          searchProgress.value = results.length
+          searchDuration.value = Date.now() - searchStartTime.value
+
+          logger.debug(`Index search complete: ${results.length} results in ${searchDuration.value}ms`)
+
+          // Mark search as complete (bar stays visible as long as searchQuery exists)
+          isSearching.value = false
+
+          return
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // FALLBACK: LIVE SEARCH (with improved feedback)
+      // ═══════════════════════════════════════════════════════════
+
+      logger.debug('Using live search (no valid index)')
+      useIndexForSearch.value = false
       searchAbortController.value = new AbortController()
 
       let continuationToken: string | undefined = undefined
-      const searchPrefix = settingsStore.searchMode === 'local' ? appStore.currentPrefix : ''
       const MAX_SEARCH_RESULTS = 10000 // Limit to prevent memory overflow
+      const queryLower = query.toLowerCase()
 
-      // Paginate through objects
+      // If no index exists and it's global search, suggest building one
+      // (User can build index manually from settings if desired)
+      if (settingsStore.searchMode === 'global' && !hasIndex && !searchIndex.isBuilding.value) {
+        logger.debug('No search index found for global search - using live search')
+      }
+
+      // Paginate through objects with improved feedback
       do {
         // Check if search was aborted
         if (searchAbortController.value.signal.aborted) {
@@ -1777,16 +2182,40 @@ watch(searchQuery, async (query) => {
           false // No delimiter - list all objects recursively
         )
 
-        // Increment page counter
+        // Increment counters
         searchPagesScanned.value++
+        searchObjectsProcessed.value += result.objects.length
 
-        // Append results (but don't exceed limit)
+        // ✨ IMPROVEMENT: Filter immediately per page (streaming results)
+        const pageMatches = result.objects.filter((obj) =>
+          obj.key.toLowerCase().includes(queryLower)
+        )
+
+        // Append only matches (not all objects!)
         const remainingSlots = MAX_SEARCH_RESULTS - globalSearchResults.value.length
-        const objectsToAdd = result.objects.slice(0, remainingSlots)
-        globalSearchResults.value.push(...objectsToAdd)
+        const matchesToAdd = pageMatches.slice(0, remainingSlots)
+        globalSearchResults.value.push(...matchesToAdd)
 
-        // Update progress
+        // ✨ IMPROVEMENT: Update progress with matches count (not total objects)
         searchProgress.value = globalSearchResults.value.length
+
+        // ✨ IMPROVEMENT: Calculate and display search speed
+        const elapsedSeconds = (Date.now() - searchStartTime.value) / 1000
+        if (elapsedSeconds > 0) {
+          searchSpeed.value = Math.round(searchObjectsProcessed.value / elapsedSeconds)
+
+          // ✨ IMPROVEMENT: Estimate time remaining (rough estimate)
+          // Assume we'll scan similar number of pages as we've scanned so far
+          if (continuationToken) {
+            const avgObjectsPerPage = searchObjectsProcessed.value / searchPagesScanned.value
+            const estimatedTotalPages = searchPagesScanned.value * 2 // Rough estimate
+            const remainingPages = estimatedTotalPages - searchPagesScanned.value
+            const remainingObjects = remainingPages * avgObjectsPerPage
+            searchTimeRemaining.value = Math.max(0, remainingObjects / searchSpeed.value)
+          } else {
+            searchTimeRemaining.value = 0
+          }
+        }
 
         // Stop if we've reached the limit
         if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
@@ -1808,6 +2237,8 @@ watch(searchQuery, async (query) => {
         isSearching.value = false
       }
       searchAbortController.value = null
+      searchSpeed.value = 0
+      searchTimeRemaining.value = 0
     }
   }, 500) // Debounce delay
 })
@@ -1827,16 +2258,102 @@ watch(
   }
 )
 
-// Clear all cached data when switching buckets
+// Clear all cached data when switching buckets and auto-build index if needed
 watch(
   () => appStore.currentBucket,
-  () => {
+  async (newBucket) => {
     clearSelection()
     inlineVersions.value.clear()
     expandedVersions.value.clear()
     globalSearchResults.value = []
     searchQuery.value = ''
     isSearching.value = false
+    hasSearchIndex.value = false
+    showIndexBuildPrompt.value = false
+    showIndexUpdatePrompt.value = false
+
+    // Auto-build index for new bucket (if no valid index exists)
+    if (newBucket && appStore.currentProfile) {
+      const profileId = appStore.currentProfile.id
+      const indexStatus = await searchIndex.getIndexStatus(profileId, newBucket)
+
+      logger.debug(`[Index] Bucket ${newBucket}: exists=${indexStatus.exists}, isValid=${indexStatus.isValid}, age=${Math.round(indexStatus.age / 1000 / 60)}min, objects=${indexStatus.totalObjects}`)
+
+      if (indexStatus.exists && indexStatus.isValid) {
+        // Valid index exists (< 8h old)
+        hasSearchIndex.value = true
+        currentIndexSize.value = indexStatus.totalObjects
+        logger.debug(`[Index] Valid index with ${indexStatus.totalObjects} objects`)
+      } else if (indexStatus.exists && !indexStatus.isValid) {
+        // Expired index exists (> 8h old) - check if we should update
+        hasSearchIndex.value = true // Keep using the old index until updated
+        currentIndexSize.value = indexStatus.totalObjects
+
+        logger.debug(`[Index] Expired index found (age: ${Math.round(indexStatus.age / 1000 / 60 / 60)}h)`)
+
+        if (!searchIndex.isBuilding.value) {
+          // Estimate current bucket size
+          const estimatedCount = await searchIndex.estimateBucketSize(profileId, newBucket)
+          logger.debug(`[Index] Current bucket size estimate: ${estimatedCount}`)
+
+          if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
+            // Auto-rebuild for small buckets (< threshold objects)
+            logger.debug(`[Index] Auto-rebuilding expired index for small bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
+            searchIndex.rebuildIndex(profileId, newBucket, settingsStore.batchSize)
+              .then((index) => {
+                hasSearchIndex.value = true
+                currentIndexSize.value = index.totalObjects
+              })
+              .catch(error => {
+                logger.error('Failed to auto-rebuild index:', error)
+              })
+          } else {
+            // Show update prompt for large buckets
+            const diff = estimatedCount === -1 ? 0 : estimatedCount - indexStatus.totalObjects
+            logger.debug(`[Index] Showing update prompt. Diff: ${diff > 0 ? '+' : ''}${diff}`)
+
+            showIndexUpdatePrompt.value = true
+            indexUpdateObjectDiff.value = diff
+            indexUpdateCurrentCount.value = estimatedCount
+            indexUpdateIndexCount.value = indexStatus.totalObjects
+          }
+        }
+      } else if (!searchIndex.isBuilding.value) {
+        // No index exists - estimate bucket size to decide if we should auto-build
+        const estimatedCount = await searchIndex.estimateBucketSize(profileId, newBucket)
+        logger.debug(`[Index] Estimated bucket size: ${estimatedCount}`)
+
+        if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
+          // Auto-build for small buckets (< threshold objects)
+          logger.debug(`[Index] Auto-building index for bucket with ${estimatedCount} objects (threshold=${settingsStore.indexAutoBuildThreshold})`)
+          searchIndex.buildIndex(profileId, newBucket, settingsStore.batchSize)
+            .then((index) => {
+              hasSearchIndex.value = true
+              currentIndexSize.value = index.totalObjects
+            })
+            .catch(error => {
+              logger.error('Failed to auto-build index:', error)
+            })
+        } else if (estimatedCount === -1 || estimatedCount >= settingsStore.indexAutoBuildThreshold) {
+          // Show prompt for large buckets (>= threshold objects)
+          logger.debug(`[Index] Showing build prompt for large bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
+          showIndexBuildPrompt.value = true
+          indexPromptObjectCount.value = estimatedCount
+
+          // Estimate index size
+          if (estimatedCount !== -1) {
+            const estimatedBytes = searchIndex.estimateIndexSize(estimatedCount)
+            indexPromptEstimatedSize.value = formatSize(estimatedBytes)
+          } else {
+            // When truncated, we know there are at least threshold objects
+            const minEstimatedBytes = searchIndex.estimateIndexSize(settingsStore.indexAutoBuildThreshold)
+            indexPromptEstimatedSize.value = `≈ ${formatSize(minEstimatedBytes)}`
+          }
+        }
+      } else {
+        logger.debug(`[Index] Build already in progress, skipping prompt`)
+      }
+    }
   }
 )
 
@@ -1849,24 +2366,86 @@ function getFolderSize(folder: string): string {
   return formatSize(size)
 }
 
+/**
+ * Navigate to a folder and load the first page
+ * Consistent with reloadCurrentView() - loads only the first batch of objects
+ * User can click "Load More" to load additional pages
+ */
+async function navigateAndLoad(prefix?: string) {
+  // Navigate to prefix (or stay current if undefined)
+  if (prefix !== undefined) {
+    appStore.navigateToFolder(prefix)
+  }
+
+  // Load first page only (consistent with batch size setting)
+  await appStore.loadObjects()
+}
+
+/**
+ * Reload ALL pages from S3 (used for explicit Refresh button only)
+ *
+ * This function loads the first page, then continues loading all subsequent pages
+ * until no more data exists. It's useful for the explicit refresh button where
+ * the user wants to see all previously loaded data refreshed from S3.
+ *
+ * ⚠️ NOTE: For CRUD operations (create/delete/upload), use appStore.reloadCurrentView()
+ * instead, which is faster and resets pagination to the first page.
+ */
+async function reloadAllPages() {
+  // Capture the number of pages the user had loaded
+  const targetPages = Math.max(1, appStore.loadedPagesCount)
+
+  logger.debug(`[Refresh] Reloading ${targetPages} page(s)...`)
+
+  // Reset and load first page
+  await appStore.reloadCurrentView()
+
+  // If the user had loaded more than one page, load the remaining ones
+  if (targetPages > 1) {
+    const toastId = toast.loading(`${t('loading')} ${targetPages} pages...`)
+
+    try {
+      // Load remaining pages (targetPages - 1 since we already have the first)
+      for (let i = 1; i < targetPages && appStore.continuationToken; i++) {
+        await appStore.loadObjects(true)
+
+        // Update toast with progress
+        toast.updateToast(toastId, {
+          message: `${t('loaded')} ${i + 1}/${targetPages} pages (${appStore.objects.length} ${t('objects')})`,
+        })
+      }
+
+      // Success
+      toast.completeToast(
+        toastId,
+        `Refreshed ${targetPages} pages (${appStore.objects.length} ${t('objects')})`,
+        'success',
+        2000
+      )
+    } catch (e) {
+      toast.completeToast(toastId, `${t('errorOccurred')}: ${e}`, 'error')
+      logger.error('Failed to reload pages:', e)
+    }
+  }
+
+  logger.debug(`[Refresh] Reloaded ${appStore.objects.length} objects`)
+}
+
 function navigateToRoot() {
   folderSizes.value.clear()
-  appStore.navigateToFolder('')
-  appStore.loadObjects()
+  navigateAndLoad('')
 }
 
 function navigateToPath(index: number) {
   folderSizes.value.clear()
   const parts = pathParts.value.slice(0, index + 1)
   const prefix = parts.join('/') + '/'
-  appStore.navigateToFolder(prefix)
-  appStore.loadObjects()
+  navigateAndLoad(prefix)
 }
 
 function navigateToFolder(folder: string) {
   folderSizes.value.clear()
-  appStore.navigateToFolder(folder)
-  appStore.loadObjects()
+  navigateAndLoad(folder)
 }
 
 function handleSort(column: SortColumn) {
@@ -2299,21 +2878,67 @@ async function createFolderHandler() {
 
   try {
     const folderPath = appStore.currentPrefix + folderCreation.name
+
+    // Create folder on S3
     await createFolderService(appStore.currentProfile.id, appStore.currentBucket, folderPath)
+
+    // Optimistic update: add folder immediately to local store
+    // S3 folder paths end with '/'
+    appStore.addFolder(folderPath + '/')
 
     toast.completeToast(toastId, `Folder "${folderCreation.name}" created successfully!`, 'success')
     modals.createFolder = false
     folderCreation.name = ''
     folderCreation.validationError = ''
-    await appStore.loadObjects()
   } catch (e) {
     toast.completeToast(toastId, `${t('createFailed')}: ${e}`, 'error')
+
     await dialog.confirm({
       title: t('errorOccurred'),
       message: `${t('createFailed')}: ${e}`,
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // On error, reload view to resynchronize with S3
+    await appStore.reloadCurrentView()
+  }
+}
+
+/**
+ * Load all remaining objects in the current folder
+ * Continues loading pages until there are no more objects
+ */
+async function loadAllObjects() {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+  if (!appStore.continuationToken) return
+
+  // Show loading toast
+  const toastId = toast.loading(t('loadingAllObjects'))
+  let totalLoaded = appStore.objects.length
+
+  try {
+    // Keep loading until no more continuation token
+    while (appStore.continuationToken) {
+      await appStore.loadObjects(true) // Load next page
+      totalLoaded = appStore.objects.length
+
+      // Update toast with progress
+      toast.updateToast(toastId, {
+        message: `${t('loaded')} ${totalLoaded} ${t('objects')}...`,
+      })
+    }
+
+    // Success toast
+    toast.completeToast(
+      toastId,
+      `${t('loadedAllObjects')}: ${totalLoaded} ${t('objects')}`,
+      'success',
+      3000
+    )
+  } catch (e) {
+    toast.completeToast(toastId, `${t('errorLoadingObjects')}: ${e}`, 'error', 5000)
+    logger.error('Failed to load all objects:', e)
   }
 }
 
@@ -2640,17 +3265,26 @@ async function deleteObjectConfirm(key: string) {
   const toastId = toast.loading(`${t('deleting')} ${getFileName(key)}`)
 
   try {
+    // Delete from S3
     await deleteObject(appStore.currentProfile.id, appStore.currentBucket, key)
+
+    // Optimistic update: remove from local store immediately
+    appStore.removeObject(key)
+
     toast.completeToast(toastId, `${getFileName(key)} deleted successfully!`, 'success')
-    await appStore.loadObjects()
   } catch (e) {
+    // On error, reload view to resynchronize with server
     toast.completeToast(toastId, `${t('deleteFailed')}: ${e}`, 'error')
+
     await dialog.confirm({
       title: t('errorOccurred'),
       message: `${t('deleteFailed')}: ${e}`,
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // Resynchronize with S3 to ensure consistency
+    await appStore.reloadCurrentView()
   }
 }
 
@@ -2670,25 +3304,34 @@ async function deleteFolderConfirm(folder: string) {
   const toastId = toast.loading(`${t('deleting')} ${folderName}`)
 
   try {
+    // Delete folder from S3 (recursively deletes all objects inside)
     const deletedCount = await deleteFolder(
       appStore.currentProfile.id,
       appStore.currentBucket,
       folder
     )
+
+    // Optimistic update: remove folder from local store immediately
+    appStore.removeFolder(folder)
+
     toast.completeToast(
       toastId,
       t('folderDeletedSuccess').replace('{0}', String(deletedCount)),
       'success'
     )
-    await appStore.loadObjects()
   } catch (e) {
+    // On error, reload view to resynchronize with server
     toast.completeToast(toastId, `${t('deleteFailed')}: ${e}`, 'error')
+
     await dialog.confirm({
       title: t('errorOccurred'),
       message: `${t('deleteFailed')}: ${e}`,
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // Resynchronize with S3 to ensure consistency
+    await appStore.reloadCurrentView()
   }
 }
 
@@ -2811,12 +3454,23 @@ async function renameFileHandler() {
     // Delete old key
     await deleteObject(appStore.currentProfile.id, appStore.currentBucket, oldKey)
 
-    // Close modal and refresh
+    // Optimistic update: remove old object and add new one
+    appStore.removeObject(oldKey)
+
+    const newObj: S3Object = {
+      key: newKey,
+      size: rename.object.size,
+      last_modified: new Date().toISOString(),
+      e_tag: '',
+      storage_class: rename.object.storage_class || 'STANDARD',
+    }
+    appStore.addObject(newObj)
+
+    // Close modal and reset
     modals.rename = false
     rename.newName = ''
     rename.object = null
     rename.validationError = ''
-    await appStore.loadObjects()
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -2824,6 +3478,9 @@ async function renameFileHandler() {
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // On error, reload view to resynchronize with S3
+    await appStore.reloadCurrentView()
   } finally {
     rename.isRenaming = false
   }
@@ -2849,9 +3506,11 @@ async function changeContentTypeDirectly(contentType: string) {
       contentType
     )
 
-    // Close menus and refresh
+    // Note: S3Object doesn't store content_type, so we can't update it optimistically
+    // The change is effective on S3, user will see it on next navigation/refresh
+
+    // Close menus
     closeContextMenu()
-    await appStore.loadObjects()
 
     // Show success message
     toast.success(t('contentTypeUpdated'))
@@ -2862,6 +3521,9 @@ async function changeContentTypeDirectly(contentType: string) {
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // On error, reload view to resynchronize with S3
+    await appStore.reloadCurrentView()
   } finally {
     changingContentType.value = false
   }
@@ -3038,6 +3700,7 @@ async function createFileHandler() {
     const encoder = new TextEncoder()
     const bytes = Array.from(encoder.encode(content))
 
+    // Create file on S3
     await putObject(
       appStore.currentProfile.id,
       appStore.currentBucket,
@@ -3046,12 +3709,21 @@ async function createFileHandler() {
       'text/plain'
     )
 
+    // Optimistic update: add file immediately to local store
+    const newObj: S3Object = {
+      key: filePath,
+      size: bytes.length,
+      last_modified: new Date().toISOString(),
+      e_tag: '',
+      storage_class: 'STANDARD',
+    }
+    appStore.addObject(newObj)
+
     // Close modal and reset
     modals.createFile = false
     fileCreation.name = ''
     fileCreation.content = ''
     fileCreation.validationError = ''
-    await appStore.loadObjects()
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -3059,9 +3731,52 @@ async function createFileHandler() {
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // On error, reload view to resynchronize with S3
+    await appStore.reloadCurrentView()
   } finally {
     fileCreation.isCreating = false
   }
+}
+
+/**
+ * Handle upload completion optimistically
+ * Adds uploaded files to local store without reloading from S3
+ */
+function handleUploadCompleted(event: Event) {
+  const customEvent = event as CustomEvent<{
+    bucket: string
+    key: string
+    size: number
+    contentType?: string
+  }>
+
+  const { bucket, key, size, contentType: _contentType } = customEvent.detail
+
+  logger.debug('[Upload] Object uploaded, adding optimistically:', key)
+
+  // Only add if it's in the current bucket and current prefix
+  if (bucket !== appStore.currentBucket) {
+    logger.debug('[Upload] Skipping - different bucket')
+    return
+  }
+
+  if (!key.startsWith(appStore.currentPrefix)) {
+    logger.debug('[Upload] Skipping - different prefix')
+    return
+  }
+
+  // Add object optimistically
+  const newObj: S3Object = {
+    key,
+    size,
+    last_modified: new Date().toISOString(),
+    e_tag: '',
+    storage_class: 'STANDARD',
+  }
+
+  appStore.addObject(newObj)
+  logger.debug('[Upload] Object added optimistically:', key)
 }
 
 // Copy/Paste functions
@@ -3108,7 +3823,16 @@ async function pasteFile() {
       destKey
     )
 
-    await appStore.loadObjects()
+    // Optimistic update: add copied file immediately to local store
+    const sourceObj = copiedFile.value
+    const newObj: S3Object = {
+      key: destKey,
+      size: sourceObj.size,
+      last_modified: new Date().toISOString(),
+      e_tag: '',
+      storage_class: sourceObj.storage_class || 'STANDARD',
+    }
+    appStore.addObject(newObj)
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -3116,6 +3840,9 @@ async function pasteFile() {
       confirmText: t('close'),
       variant: 'destructive',
     })
+
+    // On error, reload view to resynchronize with S3
+    await appStore.reloadCurrentView()
   } finally {
     pasting.value = false
   }
@@ -3351,8 +4078,12 @@ async function deleteSelectedItems() {
 
         if (isFolder) {
           await deleteFolder(appStore.currentProfile.id, appStore.currentBucket, key)
+          // Optimistic update: remove folder immediately
+          appStore.removeFolder(key)
         } else {
           await deleteObject(appStore.currentProfile.id, appStore.currentBucket, key)
+          // Optimistic update: remove object immediately
+          appStore.removeObject(key)
         }
         successCount++
 
@@ -3378,7 +4109,11 @@ async function deleteSelectedItems() {
     }
 
     clearSelection()
-    await appStore.loadObjects()
+
+    // If some deletions failed, reload view to resynchronize with S3
+    if (failCount > 0) {
+      await appStore.reloadCurrentView()
+    }
 
     if (failCount === 0) {
       toast.completeToast(
@@ -3526,8 +4261,22 @@ function handleKeyDown(event: KeyboardEvent) {
     activeElement instanceof HTMLTextAreaElement ||
     (activeElement as HTMLElement)?.isContentEditable
 
+  // Check for Cmd+F (macOS) or Ctrl+F (other OS) - Focus search bar
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+    // Prevent default browser search
+    event.preventDefault()
+    // Focus the search input (need to access $el because Input is a Vue component)
+    if (searchInputRef.value) {
+      const inputElement = (searchInputRef.value as any).$el as HTMLInputElement
+      if (inputElement) {
+        inputElement.focus()
+        // Select all text in the search input for easy replacement
+        inputElement.select()
+      }
+    }
+  }
   // Check for Cmd+A (macOS) or Ctrl+A (other OS)
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+  else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
     // Only intercept if not in an input field
     if (!isInputField) {
       // Prevent default browser behavior
@@ -3565,6 +4314,8 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown)
   // Add click outside listener for search settings menu
   window.addEventListener('click', handleClickOutside)
+  // Add upload completion listener for optimistic updates
+  window.addEventListener('upload:object-completed', handleUploadCompleted)
 
   unlistenFileDrop = await listen('tauri://file-drop', (event) => {
     isDraggingOver.value = false
@@ -3585,6 +4336,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('upload:object-completed', handleUploadCompleted)
   if (unlistenFileDrop) unlistenFileDrop()
   if (unlistenFileDropHover) unlistenFileDropHover()
   if (unlistenFileDropCancelled) unlistenFileDropCancelled()

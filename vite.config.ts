@@ -29,7 +29,9 @@ export default defineConfig({
   optimizeDeps: {
     include: ['monaco-editor']
   },
+  // Web Worker configuration for search indexing
   worker: {
-    format: 'es'
+    format: 'es',
+    plugins: () => [vue()]
   }
 })

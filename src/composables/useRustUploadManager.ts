@@ -2,7 +2,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { UploadProgressEvent } from '../types'
 import { uploadFile as uploadFileService, cancelUpload as cancelUploadService } from '../services/tauri'
-import { useAppStore } from '../stores/app'
 import { useSettingsStore } from '../stores/settings'
 import { useBucketStatsInvalidation } from './useBucketStatsInvalidation'
 
@@ -19,6 +18,8 @@ export interface RustUploadTask {
   error?: string
   startTime: number
   bucket?: string // Bucket name for stats invalidation
+  key?: string // S3 object key (full path) for adding to store after upload
+  contentType?: string // Content type for the uploaded file
 }
 
 // Queued upload request
@@ -38,45 +39,16 @@ interface QueuedUpload {
 const uploads = ref<Map<string, RustUploadTask>>(new Map())
 const uploadQueue = ref<QueuedUpload[]>([])
 const uploadBuckets = new Map<string, string>() // Maps uploadId -> bucket name
+const uploadKeys = new Map<string, string>() // Maps uploadId -> S3 key
+const uploadContentTypes = new Map<string, string | undefined>() // Maps uploadId -> content type
 let unlisten: UnlistenFn | null = null
-let reloadTimeout: number | null = null
-let lastReloadTime: number = 0
 let isProcessingQueue = false
 let queueIdCounter = 0
 
-// Minimum time between reloads (3 seconds)
-const RELOAD_COOLDOWN = 3000
-
 export function useRustUploadManager() {
-  const appStore = useAppStore()
   const settingsStore = useSettingsStore()
   const { invalidateBucketStats } = useBucketStatsInvalidation()
 
-  /**
-   * Smart reload with 3-second cooldown
-   * - If a reload is already scheduled, do nothing (prevents unnecessary reloads)
-   * - If last reload was < 3s ago, schedule reload for 3s after last reload
-   * - Otherwise, reload immediately
-   */
-  const scheduleReload = () => {
-    // If a reload is already scheduled, skip (prevents duplicate reloads)
-    if (reloadTimeout !== null) {
-      return
-    }
-
-    const now = Date.now()
-    const timeSinceLastReload = now - lastReloadTime
-    const cooldownRemaining = RELOAD_COOLDOWN - timeSinceLastReload
-
-    // Calculate delay: wait for cooldown to expire, or reload immediately
-    const delay = Math.max(0, cooldownRemaining)
-
-    reloadTimeout = window.setTimeout(() => {
-      appStore.loadObjects()
-      lastReloadTime = Date.now()
-      reloadTimeout = null
-    }, delay)
-  }
 
   /**
    * Start listening to upload progress events from Rust
@@ -92,6 +64,10 @@ export function useRustUploadManager() {
 
       if (!task) {
         // New upload, create task
+        const keyFromMap = uploadKeys.get(progress.upload_id)
+        const bucketFromMap = uploadBuckets.get(progress.upload_id)
+        const contentTypeFromMap = uploadContentTypes.get(progress.upload_id)
+
         task = {
           uploadId: progress.upload_id,
           fileName: progress.file_name,
@@ -103,7 +79,9 @@ export function useRustUploadManager() {
           status: progress.status,
           error: progress.error,
           startTime: Date.now(),
-          bucket: uploadBuckets.get(progress.upload_id), // Get bucket from our map
+          bucket: bucketFromMap, // Get bucket from our map
+          key: keyFromMap, // Get key from our map
+          contentType: contentTypeFromMap, // Get content type from our map
         }
       } else {
         // Update existing task
@@ -113,17 +91,46 @@ export function useRustUploadManager() {
         task.percentage = progress.percentage
         task.status = progress.status
         task.error = progress.error
+
+        // Fix race condition: if key/bucket are missing, try to get them from maps
+        // This happens when the first event arrived before uploadKeys.set() was called
+        if (!task.key) {
+          const keyFromMap = uploadKeys.get(progress.upload_id)
+          if (keyFromMap) {
+            task.key = keyFromMap
+          }
+        }
+        if (!task.bucket) {
+          const bucketFromMap = uploadBuckets.get(progress.upload_id)
+          if (bucketFromMap) {
+            task.bucket = bucketFromMap
+          }
+        }
+        if (!task.contentType) {
+          const contentTypeFromMap = uploadContentTypes.get(progress.upload_id)
+          if (contentTypeFromMap) {
+            task.contentType = contentTypeFromMap
+          }
+        }
       }
 
       uploads.value.set(progress.upload_id, task)
 
-      // Reload objects when upload completes successfully
-      if (task.status === 'completed') {
-        scheduleReload()
+      // Invalidate bucket stats when upload completes
+      if (task.status === 'completed' && task.bucket) {
+        invalidateBucketStats(task.bucket)
 
-        // Invalidate bucket stats to trigger refresh
-        if (task.bucket) {
-          invalidateBucketStats(task.bucket)
+        // Emit custom event for optimistic upload handling
+        // This allows ObjectBrowser to add the uploaded file without reloading
+        if (task.key) {
+          window.dispatchEvent(new CustomEvent('upload:object-completed', {
+            detail: {
+              bucket: task.bucket,
+              key: task.key,
+              size: task.fileSize,
+              contentType: task.contentType,
+            }
+          }))
         }
       }
 
@@ -131,8 +138,10 @@ export function useRustUploadManager() {
       if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
         setTimeout(() => {
           uploads.value.delete(progress.upload_id)
-          // Clean up bucket mapping
+          // Clean up all mappings
           uploadBuckets.delete(progress.upload_id)
+          uploadKeys.delete(progress.upload_id)
+          uploadContentTypes.delete(progress.upload_id)
         }, 5000)
 
         // Process queue when an upload finishes (freed up a slot)
@@ -148,12 +157,6 @@ export function useRustUploadManager() {
     if (unlisten) {
       unlisten()
       unlisten = null
-    }
-
-    // Clear pending reload timeout
-    if (reloadTimeout !== null) {
-      clearTimeout(reloadTimeout)
-      reloadTimeout = null
     }
   }
 
@@ -215,8 +218,10 @@ export function useRustUploadManager() {
             settingsStore.multipartThresholdMB
           )
 
-          // Store bucket mapping for this upload
+          // Store mappings for this upload
           uploadBuckets.set(uploadId, queuedUpload.bucket)
+          uploadKeys.set(uploadId, queuedUpload.key)
+          uploadContentTypes.set(uploadId, queuedUpload.contentType)
 
           // Now remove the phantom - the real upload will appear via events
           uploads.value.delete(queuedUpload.queueId)
@@ -301,6 +306,8 @@ export function useRustUploadManager() {
         status: 'queued',
         startTime: Date.now(),
         bucket, // Store bucket name for stats invalidation
+        key, // Store S3 key for adding to store after upload
+        contentType, // Store content type
       }
       uploads.value.set(queueId, task)
 
