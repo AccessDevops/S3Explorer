@@ -272,59 +272,6 @@
         />
       </div>
     </div>
-
-    <!-- Fullscreen Image Editor Modal -->
-    <div
-      v-if="showFullscreenImageEditor && isEditingImage"
-      class="fixed inset-0 z-50 bg-background flex flex-col"
-    >
-      <!-- Fullscreen Toolbar -->
-      <div class="flex items-center justify-between gap-4 p-4 border-b bg-card">
-        <div class="flex items-center gap-3">
-          <h3 class="font-semibold">{{ object.key }}</h3>
-          <span v-if="imageHasUnsavedChanges" class="text-yellow-500 text-sm">*</span>
-        </div>
-        <div class="flex gap-2">
-          <button
-            @click="cancelEditingImage"
-            :disabled="savingImage"
-            class="px-3 py-1.5 text-sm border rounded-md hover:bg-accent transition-colors disabled:opacity-50"
-          >
-            {{ t('cancel') }}
-          </button>
-          <button
-            @click="saveImageChanges"
-            :disabled="savingImage"
-            class="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            <svg
-              v-if="savingImage"
-              class="animate-spin h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            {{ savingImage ? t('saving') : t('save') }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Fullscreen Image Editor -->
-      <div class="flex-1 overflow-hidden">
-        <ImageEditor
-          ref="imageEditorRef"
-          :image-url="imageUrl"
-          :image-name="object.key.split('/').pop()"
-          :theme="imageEditorTheme"
-          @loaded="onImageEditorLoaded"
-          @error="onImageEditorError"
-          @modified="imageHasUnsavedChanges = true"
-        />
-      </div>
-    </div>
   </div>
 </template>
 
@@ -338,7 +285,6 @@ import { getObject, putObject, changeContentType } from '../services/tauri'
 import { formatSize } from '../utils/formatters'
 import type { S3Object } from '../types'
 import CodeEditor from './CodeEditor.vue'
-import ImageEditor from './ImageEditor.vue'
 
 const props = defineProps<{
   object: S3Object
@@ -346,6 +292,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   saved: []
+  'image-editor-opened': []
 }>()
 
 const appStore = useAppStore()
@@ -363,28 +310,11 @@ const forceLoad = ref(false)
 const showFullscreenEditor = ref(false)
 const changingContentType = ref(false)
 
-// Image editing state
+// Image editing state (managed by parent ObjectBrowser)
 const isEditingImage = ref(false)
-const savingImage = ref(false)
-const imageEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
-const showFullscreenImageEditor = ref(false)
-const imageHasUnsavedChanges = ref(false)
 
 // Get Monaco theme from settings store
 const monacoTheme = computed(() => settingsStore.getMonacoTheme)
-
-// Get Image Editor theme from settings store
-const imageEditorTheme = computed<'dark' | 'light'>(() => {
-  if (settingsStore.editorTheme === 'light') {
-    return 'light'
-  } else if (settingsStore.editorTheme === 'dark' || settingsStore.editorTheme === 'high-contrast') {
-    return 'dark'
-  } else {
-    // system - use system preference
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    return prefersDark ? 'dark' : 'light'
-  }
-})
 
 // File size limits from settings
 const SIZE_WARNING_LIMIT = computed(() => settingsStore.previewWarningLimitMB * 1024 * 1024)
@@ -733,74 +663,18 @@ async function saveChanges() {
 
 // Image editing functions
 function startEditingImage() {
+  emit('image-editor-opened')
   isEditingImage.value = true
-  showFullscreenImageEditor.value = true
-  imageHasUnsavedChanges.value = false
 }
 
-function cancelEditingImage() {
+// Called by parent to reset editing state after editor closes
+function resetImageEditingState() {
   isEditingImage.value = false
-  showFullscreenImageEditor.value = false
-  imageHasUnsavedChanges.value = false
 }
 
-async function saveImageChanges() {
-  if (!appStore.currentProfile || !appStore.currentBucket || !imageEditorRef.value) {
-    toast.error('No profile or bucket selected')
-    return
-  }
-
-  try {
-    savingImage.value = true
-
-    // Get the edited image from the editor
-    // Determine format based on original file extension
-    const key = props.object.key.toLowerCase()
-    const format = key.endsWith('.png') ? 'png' : 'jpeg'
-    const quality = 0.92
-
-    const imageBytes = await imageEditorRef.value.getEditedImageBytes(format, quality)
-
-    if (!imageBytes) {
-      throw new Error('Failed to get edited image')
-    }
-
-    // Determine content type
-    const newContentType = format === 'png' ? 'image/png' : 'image/jpeg'
-
-    // Upload to S3
-    await putObject(
-      appStore.currentProfile.id,
-      appStore.currentBucket,
-      props.object.key,
-      Array.from(imageBytes),
-      newContentType
-    )
-
-    // Update local content
-    content.value = imageBytes
-    contentType.value = newContentType
-    isEditingImage.value = false
-    showFullscreenImageEditor.value = false
-    imageHasUnsavedChanges.value = false
-
-    emit('saved')
-    toast.success('Image saved successfully!')
-  } catch (e) {
-    toast.error(`Failed to save image: ${e}`)
-  } finally {
-    savingImage.value = false
-  }
-}
-
-function onImageEditorLoaded() {
-  // Image editor loaded successfully
-  console.log('Image editor loaded')
-}
-
-function onImageEditorError(error: string) {
-  toast.error(`Image editor error: ${error}`)
-  isEditingImage.value = false
+// Reload content from S3 (used after image save to refresh the view)
+async function reloadContent() {
+  await loadContent()
 }
 
 // Expose methods and state to parent component
@@ -809,14 +683,14 @@ defineExpose({
   isEditing,
   saving,
   contentType,
+  imageUrl,
   startEditing,
   saveChanges,
   cancelEditing,
   isEditingImage,
-  savingImage,
   startEditingImage,
-  saveImageChanges,
-  cancelEditingImage,
+  resetImageEditingState,
+  reloadContent,
 })
 
 async function loadContent() {

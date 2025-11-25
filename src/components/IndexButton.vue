@@ -8,7 +8,7 @@
         iconColorClass,
         isBuilding ? 'animate-pulse' : 'hover:bg-muted',
       ]"
-      :title="t('searchIndex')"
+      v-tooltip="t('searchIndex')"
     >
       <!-- Database/Index icon -->
       <svg

@@ -193,3 +193,64 @@
   animation: progress-indeterminate 1.5s ease-in-out infinite;
   width: 25%;
 }
+
+/* Tooltip directive styles */
+.v-tooltip {
+  position: absolute;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.v-tooltip-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.v-tooltip-content {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  white-space: nowrap;
+  max-width: 300px;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+.v-tooltip-arrow {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background-color: hsl(var(--primary));
+  transform: rotate(45deg);
+}
+
+.v-tooltip[data-side="top"] .v-tooltip-arrow {
+  bottom: -4px;
+  left: 50%;
+  margin-left: -4px;
+}
+
+.v-tooltip[data-side="bottom"] .v-tooltip-arrow {
+  top: -4px;
+  left: 50%;
+  margin-left: -4px;
+}
+
+.v-tooltip[data-side="left"] .v-tooltip-arrow {
+  right: -4px;
+  top: 50%;
+  margin-top: -4px;
+}
+
+.v-tooltip[data-side="right"] .v-tooltip-arrow {
+  left: -4px;
+  top: 50%;
+  margin-top: -4px;
+}

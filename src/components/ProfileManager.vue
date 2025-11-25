@@ -14,7 +14,7 @@
             v-if="profileSearchQuery"
             @click="profileSearchQuery = ''"
             class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            :title="t('clear')"
+            v-tooltip="t('clear')"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -59,7 +59,7 @@
             variant="ghost"
             class="h-6 w-6 text-white/70 hover:text-white hover:bg-white/10"
             @click.stop="editProfileHandler(profile)"
-            :title="t('edit')"
+            v-tooltip="t('edit')"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -83,7 +83,7 @@
             variant="ghost"
             class="h-6 w-6 text-white/70 hover:text-red-400 hover:bg-white/10"
             @click.stop="deleteProfileConfirm(profile)"
-            :title="t('delete')"
+            v-tooltip="t('delete')"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"

@@ -14,7 +14,7 @@
             v-if="bucketSearchQuery"
             @click="bucketSearchQuery = ''"
             class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            :title="t('clear')"
+            v-tooltip="t('clear')"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -37,7 +37,7 @@
             size="icon"
             variant="ghost"
             @click="showCreateBucketModal = true"
-            :title="t('createBucket')"
+            v-tooltip="t('createBucket')"
             class="h-8 w-8"
           >
             +
@@ -46,7 +46,7 @@
             size="icon"
             variant="ghost"
             @click="refreshBuckets()"
-            :title="t('refresh')"
+            v-tooltip="t('refresh')"
             class="h-8 w-8"
           >
             ⟳
@@ -77,7 +77,7 @@
             <div
               v-if="bucketAcls[bucket.name]"
               class="flex-shrink-0"
-              :title="bucketAcls[bucket.name] === 'Public' ? t('bucketPublic') : t('bucketPrivate')"
+              v-tooltip="bucketAcls[bucket.name] === 'Public' ? t('bucketPublic') : t('bucketPrivate')"
             >
               <svg
                 v-if="bucketAcls[bucket.name] === 'Public'"
@@ -120,13 +120,13 @@
             {{ bucketStats[bucket.name].count }} object{{
               bucketStats[bucket.name].count !== 1 ? 's' : ''
             }}
-            <span v-if="bucketStatsIsEstimate[bucket.name]" class="text-yellow-400 ml-1" title="Estimate based on first 1000 objects">
+            <span v-if="bucketStatsIsEstimate[bucket.name]" class="text-yellow-400 ml-1" v-tooltip="t('estimateTooltip')">
               (~)
             </span>
             <button
               @click.stop="loadBucketStats(bucket.name, true)"
               class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-              :title="t('refresh')"
+              v-tooltip="t('refresh')"
             >
               ⟳
             </button>
@@ -148,7 +148,7 @@
             <button
               @click.stop="loadQuickEstimate(bucket.name)"
               class="text-yellow-400 hover:text-yellow-300 transition-colors"
-              :title="t('quickEstimate')"
+              v-tooltip="t('quickEstimate')"
             >
               ⚡ {{ t('estimate') }}
             </button>
@@ -156,7 +156,7 @@
             <button
               @click.stop="loadBucketStats(bucket.name, false)"
               class="text-blue-400 hover:text-blue-300 transition-colors"
-              :title="t('fullCalculation')"
+              v-tooltip="t('fullCalculation')"
             >
               ⟳ {{ t('calculate') }}
             </button>

@@ -24,7 +24,7 @@
           v-if="hasActiveUploads"
           @click="cancelAll"
           class="text-xs px-2 py-1 rounded hover:bg-destructive/10 text-destructive transition-colors"
-          :title="t('cancel')"
+          v-tooltip="t('cancel')"
         >
           {{ t('cancel') }}
         </button>
@@ -32,7 +32,7 @@
           v-if="!hasActiveUploads"
           @click="clearFinished"
           class="text-xs px-2 py-1 rounded hover:bg-muted-foreground/10 transition-colors"
-          :title="t('clear')"
+          v-tooltip="t('clear')"
         >
           {{ t('clear') }}
         </button>
@@ -56,7 +56,7 @@
         <!-- File name and status -->
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium truncate" :title="upload.fileName">
+            <div class="text-sm font-medium truncate" v-tooltip="upload.fileName">
               {{ upload.fileName }}
             </div>
             <div class="text-xs text-muted-foreground mt-0.5">
@@ -97,7 +97,7 @@
               v-if="upload.status === 'uploading' || upload.status === 'pending' || upload.status === 'starting' || upload.status === 'queued'"
               @click="cancelUpload(upload.uploadId)"
               class="p-1 rounded hover:bg-destructive/10 text-destructive transition-colors"
-              :title="t('cancel')"
+              v-tooltip="t('cancel')"
             >
               <PhX :size="16" />
             </button>

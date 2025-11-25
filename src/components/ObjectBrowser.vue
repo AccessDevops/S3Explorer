@@ -24,7 +24,7 @@
           variant="ghost"
           @click="appStore.goBack()"
           :disabled="!appStore.canGoBack"
-          :title="t('goBack')"
+          v-tooltip="t('goBack')"
           class="mr-2 px-2"
         >
           <PhCaretLeft :size="18" />
@@ -70,7 +70,7 @@
         <button
           ref="searchSettingsButtonRef"
           @click="toggleSearchSettingsMenu"
-          :title="t('searchMode')"
+          v-tooltip="t('searchMode')"
           class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-muted transition-colors"
           :class="showSearchSettings ? 'bg-muted text-primary' : 'text-muted-foreground'"
         >
@@ -135,7 +135,7 @@
                 {{ t('scannedPages', searchPagesScanned) }} · {{ formatTime(searchDuration / 1000) }}
               </div>
             </div>
-            <Button v-if="isSearching" size="sm" variant="ghost" @click="stopSearch" :title="t('stopSearch')">
+            <Button v-if="isSearching" size="sm" variant="ghost" @click="stopSearch" v-tooltip="t('stopSearch')">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="16"
@@ -165,7 +165,7 @@
         <Button size="sm" variant="outline" @click="modals.createFolder = true">{{
           t('newFolder')
         }}</Button>
-        <Button size="sm" variant="ghost" @click="reloadAllPages()" :title="t('refresh')"
+        <Button size="sm" variant="ghost" @click="reloadAllPages()" v-tooltip="t('refresh')"
           >⟳</Button
         >
       </div>
@@ -308,7 +308,7 @@
               size="sm"
               variant="destructive"
               @click.stop="deleteFolderConfirm(folder)"
-              :title="t('delete')"
+              v-tooltip="t('delete')"
             >
               <PhTrash :size="16" />
             </Button>
@@ -342,7 +342,7 @@
                 'flex-shrink-0 hover:bg-accent rounded transition-opacity',
                 expandedVersions.has(obj.key) || loadingInlineVersions.has(obj.key) || hasMultipleVersions(obj) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
               ]"
-              :title="expandedVersions.has(obj.key) ? t('hideVersions') : t('showVersions')"
+              v-tooltip="expandedVersions.has(obj.key) ? t('hideVersions') : t('showVersions')"
             >
               <PhCaretDown
                 v-if="expandedVersions.has(obj.key)"
@@ -533,7 +533,7 @@
                   size="sm"
                   variant="secondary"
                   @click.stop="downloadObjectVersion(version)"
-                  :title="t('download')"
+                  v-tooltip="t('download')"
                 >
                   <PhDownloadSimple :size="16" />
                 </Button>
@@ -629,7 +629,7 @@
               variant="default"
               @click="loadAllObjects"
               class="flex-1"
-              :title="t('loadAllObjectsInFolder')"
+              v-tooltip="t('loadAllObjectsInFolder')"
             >
               {{ t('loadAll') }}
             </Button>
@@ -689,7 +689,7 @@
           t('download')
         }}</Button>
         <Button size="sm" variant="secondary" @click="copySelectedItems">{{ t('copy') }}</Button>
-        <Button size="sm" variant="destructive" @click="deleteSelectedItems" :title="t('delete')">
+        <Button size="sm" variant="destructive" @click="deleteSelectedItems" v-tooltip="t('delete')">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="16"
@@ -733,7 +733,7 @@
             v-if="appStore.continuationToken"
             class="text-primary ml-2 cursor-pointer hover:underline"
             @click="loadAllObjects"
-            :title="t('clickToLoadAll')"
+            v-tooltip="t('clickToLoadAll')"
             >• {{ t('moreAvailable') }}</span
           >
         </span>
@@ -800,7 +800,12 @@
 
           <TabsContent value="content" class="flex-1 flex flex-col overflow-hidden">
             <div class="overflow-y-auto flex-1">
-              <ObjectViewer v-if="viewingObject" ref="objectViewerRef" :object="viewingObject" />
+              <ObjectViewer
+                v-if="viewingObject"
+                ref="objectViewerRef"
+                :object="viewingObject"
+                @image-editor-opened="onImageEditorOpened"
+              />
             </div>
             <div class="mt-4 flex gap-2 flex-shrink-0">
               <template v-if="objectViewerRef?.isText">
@@ -936,7 +941,7 @@
                       <button
                         @click="saveEditTag"
                         class="p-1 hover:bg-accent rounded transition-colors"
-                        :title="t('save')"
+                        v-tooltip="t('save')"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <polyline points="20 6 9 17 4 12"></polyline>
@@ -945,7 +950,7 @@
                       <button
                         @click="cancelEditTag"
                         class="p-1 hover:bg-accent rounded transition-colors"
-                        :title="t('cancel')"
+                        v-tooltip="t('cancel')"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -968,7 +973,7 @@
                         <button
                           @click="startEditTag(index)"
                           class="p-1 hover:bg-primary/20 rounded transition-colors"
-                          :title="t('edit')"
+                          v-tooltip="t('edit')"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -978,7 +983,7 @@
                         <button
                           @click="deleteTag(index)"
                           class="p-1 hover:bg-destructive/20 hover:text-destructive rounded transition-colors"
-                          :title="t('delete')"
+                          v-tooltip="t('delete')"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1271,6 +1276,10 @@
               v-model="fileCreation.content"
               :placeholder="t('fileContentPlaceholder')"
               class="w-full min-h-[120px] p-3 text-sm font-mono border rounded-md resize-y bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
             ></textarea>
           </div>
         </div>
@@ -1334,7 +1343,7 @@
               size="sm"
               variant="secondary"
               @click="downloadObjectVersion(version)"
-              :title="t('download')"
+              v-tooltip="t('download')"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -1443,7 +1452,7 @@
             <button
               @click="showIndexBuildPrompt = false"
               class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-              :title="t('close')"
+              v-tooltip="t('close')"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -1531,7 +1540,7 @@
             <button
               @click="showIndexUpdatePrompt = false"
               class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-              :title="t('close')"
+              v-tooltip="t('close')"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -1563,6 +1572,57 @@
 
     <!-- Upload progress popup -->
     <RustUploadProgress />
+
+    <!-- Fullscreen Image Editor - Rendered outside dialog to avoid focus trap -->
+    <div
+      v-if="showImageEditor && imageEditorObject"
+      class="fixed inset-0 z-[9999] bg-background flex flex-col overflow-visible"
+    >
+      <!-- Fullscreen Toolbar -->
+      <div class="flex items-center justify-between gap-4 p-4 border-b bg-card">
+        <div class="flex items-center gap-3">
+          <h3 class="font-semibold">{{ imageEditorObject.key }}</h3>
+          <span v-if="imageHasUnsavedChanges" class="text-yellow-500 text-sm">*</span>
+        </div>
+        <div class="flex gap-2">
+          <button
+            @click="cancelImageEditor"
+            :disabled="savingImage"
+            class="px-3 py-1.5 text-sm border rounded-md hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            {{ t('cancel') }}
+          </button>
+          <button
+            @click="saveImageEditor"
+            :disabled="savingImage"
+            class="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <svg
+              v-if="savingImage"
+              class="animate-spin h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {{ savingImage ? t('saving') : t('save') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Fullscreen Image Editor -->
+      <div class="flex-1 min-h-0 overflow-visible">
+        <ImageEditor
+          ref="imageEditorRef"
+          :image-url="imageEditorUrl"
+          :image-name="imageEditorObject.key.split('/').pop()"
+          :theme="imageEditorTheme"
+          @modified="imageHasUnsavedChanges = true"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1602,6 +1662,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse } from '../types'
 import ObjectViewer from './ObjectViewer.vue'
+import ImageEditor from './ImageEditor.vue'
 import ContextMenu from './ContextMenu.vue'
 import IndexButton from './IndexButton.vue'
 import RustUploadProgress from './RustUploadProgress.vue'
@@ -1962,6 +2023,25 @@ const draggingFolder = ref<string | null>(null)
 const viewingObject = ref<S3Object | null>(null)
 const showViewModal = ref(false)
 const viewModalVersions = ref<ObjectVersion[]>([])
+
+// Image editor refs (rendered outside dialog to avoid focus trap)
+const showImageEditor = ref(false)
+const imageEditorObject = ref<S3Object | null>(null)
+const imageEditorUrl = ref('')
+const imageEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
+const imageHasUnsavedChanges = ref(false)
+const savingImage = ref(false)
+const imageEditorTheme = computed<'dark' | 'light'>(() => {
+  if (settingsStore.editorTheme === 'light') {
+    return 'light'
+  } else if (settingsStore.editorTheme === 'dark' || settingsStore.editorTheme === 'high-contrast') {
+    return 'dark'
+  } else {
+    // system - use system preference
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    return prefersDark ? 'dark' : 'light'
+  }
+})
 
 // Tags refs
 const viewModalTags = ref<ObjectTag[]>([])
@@ -3562,6 +3642,114 @@ async function viewObject(obj: S3Object) {
   await Promise.all([loadViewModalVersions(), loadViewModalTags(), loadViewModalHeaders()])
 }
 
+// Image editor modal handlers - open editor in ObjectBrowser to avoid focus trap conflict
+function onImageEditorOpened() {
+  if (!viewingObject.value || !objectViewerRef.value) return
+
+  // Get the image URL from ObjectViewer
+  const imageUrl = objectViewerRef.value.imageUrl
+  if (!imageUrl) return
+
+  // Store the object and URL for the image editor
+  imageEditorObject.value = viewingObject.value
+  imageEditorUrl.value = imageUrl
+  imageHasUnsavedChanges.value = false
+
+  // Close the dialog and open the image editor
+  showViewModal.value = false
+  showImageEditor.value = true
+}
+
+async function cancelImageEditor() {
+  // Show confirmation if there are unsaved changes
+  if (imageHasUnsavedChanges.value) {
+    const confirmed = await dialog.confirm({
+      title: t('unsavedChanges'),
+      message: t('unsavedChangesMessage'),
+      confirmText: t('discardChanges'),
+      cancelText: t('cancel'),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+  }
+
+  // Clean up and close
+  closeImageEditor()
+  showViewModal.value = true
+}
+
+// Helper to clean up image editor state
+function closeImageEditor() {
+  showImageEditor.value = false
+  imageEditorObject.value = null
+  imageHasUnsavedChanges.value = false
+
+  // Revoke the blob URL to free memory (problem 7)
+  if (imageEditorUrl.value) {
+    URL.revokeObjectURL(imageEditorUrl.value)
+    imageEditorUrl.value = ''
+  }
+
+  // Reset ObjectViewer's editing state (problem 2)
+  if (objectViewerRef.value) {
+    objectViewerRef.value.resetImageEditingState()
+  }
+}
+
+async function saveImageEditor() {
+  if (!appStore.currentProfile || !appStore.currentBucket || !imageEditorRef.value || !imageEditorObject.value) {
+    toast.error('No profile or bucket selected')
+    return
+  }
+
+  try {
+    savingImage.value = true
+
+    // Get the edited image from the editor
+    const key = imageEditorObject.value.key.toLowerCase()
+    const format = key.endsWith('.png') ? 'png' : 'jpeg'
+    const quality = 0.92
+
+    const imageBytes = await imageEditorRef.value.getEditedImageBytes(format, quality)
+
+    if (!imageBytes) {
+      throw new Error('Failed to get edited image')
+    }
+
+    // Determine content type
+    const newContentType = format === 'png' ? 'image/png' : 'image/jpeg'
+
+    // Upload to S3
+    await putObject(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      imageEditorObject.value.key,
+      Array.from(imageBytes),
+      newContentType
+    )
+
+    toast.success(t('imageSavedSuccess'))
+
+    // Clean up the image editor
+    closeImageEditor()
+
+    // Reopen the dialog
+    showViewModal.value = true
+
+    // Reload content in ObjectViewer to show the updated image (problem 5)
+    if (objectViewerRef.value) {
+      await objectViewerRef.value.reloadContent()
+    }
+
+    // Refresh the object list to show updated image
+    await loadAllObjects()
+  } catch (e) {
+    toast.error(`Failed to save image: ${e}`)
+  } finally {
+    savingImage.value = false
+  }
+}
+
 async function loadViewModalVersions() {
   if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket) return
 
@@ -4778,6 +4966,12 @@ function selectAllItems() {
 
 // Keyboard event handler
 function handleKeyDown(event: KeyboardEvent) {
+  // Ignore keyboard events when the image editor is active
+  const isInImageEditor = document.querySelector('.tui-image-editor')?.contains(event.target as Node)
+  if (isInImageEditor || showImageEditor.value) {
+    return
+  }
+
   // Check if the active element is an input, textarea, or contentEditable
   const activeElement = document.activeElement
   const isInputField =

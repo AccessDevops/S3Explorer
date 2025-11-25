@@ -25,6 +25,8 @@ const emit = defineEmits<{
 const { t: _t, language } = useI18n()
 const editorContainer = ref<HTMLElement | null>(null)
 let editorInstance: ImageEditor | null = null
+let resizeObserver: ResizeObserver | null = null
+let resizeTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Dark theme configuration
 const darkTheme = {
@@ -160,9 +162,118 @@ function _getTuiLocale() {
   return langMap[currentLang] || 'en-US'
 }
 
+// Calculate max dimensions based on available container space
+function calculateDimensions(): { cssMaxWidth: number; cssMaxHeight: number } {
+  const parent = editorContainer.value?.parentElement
+  const availableWidth = parent?.clientWidth || window.innerWidth
+  const availableHeight = parent?.clientHeight || window.innerHeight
+
+  // Reserve space for toolbar (~120px) and menu bar (~50px)
+  return {
+    cssMaxWidth: Math.max(availableWidth - 40, 400),
+    cssMaxHeight: Math.max(availableHeight - 170, 300),
+  }
+}
+
+// Store current dimensions to detect significant changes
+let currentDimensions = { width: 0, height: 0 }
+
+// Handle resize with debounce
+function handleResize() {
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout)
+  }
+
+  resizeTimeout = setTimeout(() => {
+    const { cssMaxWidth, cssMaxHeight } = calculateDimensions()
+
+    // Only reinitialize if dimensions changed significantly (>50px)
+    const widthDiff = Math.abs(cssMaxWidth - currentDimensions.width)
+    const heightDiff = Math.abs(cssMaxHeight - currentDimensions.height)
+
+    if (widthDiff > 50 || heightDiff > 50) {
+      currentDimensions = { width: cssMaxWidth, height: cssMaxHeight }
+
+      // Store current image data before reinitializing
+      if (editorInstance) {
+        const imageData = editorInstance.toDataURL()
+        destroyEditor()
+
+        // Reinitialize with new dimensions and reload image
+        initializeEditorWithImage(imageData)
+      }
+    }
+  }, 300) // 300ms debounce
+}
+
+// Initialize editor with optional image data URL
+function initializeEditorWithImage(imageDataUrl?: string) {
+  if (!editorContainer.value) return
+
+  const { cssMaxWidth, cssMaxHeight } = calculateDimensions()
+  currentDimensions = { width: cssMaxWidth, height: cssMaxHeight }
+
+  try {
+    editorInstance = new ImageEditor(editorContainer.value, {
+      includeUI: {
+        loadImage: {
+          path: imageDataUrl || props.imageUrl,
+          name: props.imageName || 'image',
+        },
+        theme: editorTheme.value,
+        menu: ['crop', 'flip', 'rotate', 'draw', 'shape', 'icon', 'text', 'mask', 'filter'],
+        initMenu: 'filter',
+        uiSize: {
+          width: '100%',
+          height: '100%',
+        },
+        menuBarPosition: 'bottom',
+      },
+      cssMaxWidth,
+      cssMaxHeight,
+      usageStatistics: false,
+    })
+
+    editorInstance.on('load', () => {
+      emit('loaded')
+    })
+
+    editorInstance.on('error', (error: any) => {
+      console.error('Image editor error:', error)
+      emit('error', error.message || 'Failed to load image')
+    })
+
+    editorInstance.on('undoStackChanged', () => {
+      emit('modified')
+    })
+
+    editorInstance.on('objectActivated', () => {
+      emit('modified')
+    })
+
+    editorInstance.on('objectMoved', () => {
+      emit('modified')
+    })
+
+    editorInstance.on('objectScaled', () => {
+      emit('modified')
+    })
+
+    editorInstance.on('objectRotated', () => {
+      emit('modified')
+    })
+  } catch (error: any) {
+    console.error('Failed to initialize image editor:', error)
+    emit('error', error.message || 'Failed to initialize editor')
+  }
+}
+
 // Initialize editor
 function initializeEditor() {
   if (!editorContainer.value) return
+
+  const { cssMaxWidth, cssMaxHeight } = calculateDimensions()
+  currentDimensions = { width: cssMaxWidth, height: cssMaxHeight }
 
   try {
     editorInstance = new ImageEditor(editorContainer.value, {
@@ -176,12 +287,12 @@ function initializeEditor() {
         initMenu: 'filter',
         uiSize: {
           width: '100%',
-          height: '600px',
+          height: '100%',
         },
         menuBarPosition: 'bottom',
       },
-      cssMaxWidth: 1000,
-      cssMaxHeight: 600,
+      cssMaxWidth,
+      cssMaxHeight,
       usageStatistics: false, // Disable analytics
     })
 
@@ -299,10 +410,30 @@ onMounted(() => {
   // Small delay to ensure DOM is ready
   setTimeout(() => {
     initializeEditor()
+
+    // Setup ResizeObserver to handle window/container resizing
+    if (editorContainer.value?.parentElement) {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize()
+      })
+      resizeObserver.observe(editorContainer.value.parentElement)
+    }
   }, 100)
 })
 
 onBeforeUnmount(() => {
+  // Cleanup ResizeObserver
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+
+  // Cleanup resize timeout
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout)
+    resizeTimeout = null
+  }
+
   destroyEditor()
 })
 </script>
@@ -311,13 +442,17 @@ onBeforeUnmount(() => {
 .image-editor-container {
   width: 100%;
   height: 100%;
-  min-height: 600px;
+  overflow: visible;
+}
+
+/* Force the tui-image-editor to take full height - override inline style */
+:deep(.tui-image-editor-container) {
+  height: 100% !important;
 }
 
 /* Ensure the editor is responsive */
 :deep(.tui-image-editor-canvas-container > canvas) {
   max-width: 100% !important;
-  height: auto !important;
 }
 
 /* Hide the Load and Download buttons (not needed since we load from S3 and save directly) */
@@ -338,5 +473,123 @@ onBeforeUnmount(() => {
 :deep(.tui-image-editor-header-buttons),
 :deep(.tui-image-editor-controls-buttons) {
   display: none !important;
+}
+
+/* Fix color picker visibility - ensure it's not clipped by parent overflow */
+:deep(.tui-image-editor-submenu) {
+  overflow: visible !important;
+}
+
+:deep(.tui-image-editor-menu) {
+  overflow: visible !important;
+}
+
+/* Ensure color picker popup is visible and has high z-index */
+:deep(.color-picker-control),
+:deep(.tui-colorpicker-container) {
+  z-index: 10000 !important;
+}
+
+/* Fix the submenu container to allow color picker to overflow */
+:deep(.tui-image-editor-submenu-item) {
+  overflow: visible !important;
+}
+
+/* Ensure the main container doesn't clip the color picker */
+:deep(.tui-image-editor-main-container) {
+  overflow: visible !important;
+}
+
+/* Fix color picker position if needed */
+:deep(.color-picker-control .triangle) {
+  z-index: 10001 !important;
+}
+
+/* Fix filter color items - the color picker is positioned with negative top */
+:deep(.filter-color-item) {
+  overflow: visible !important;
+}
+
+:deep(.tui-image-editor-button) {
+  overflow: visible !important;
+}
+
+/* Fix the submenu content area that contains the filter options */
+:deep(.tui-image-editor-submenu-style) {
+  overflow: visible !important;
+}
+
+/* Fix the range wrapper and filter options containers */
+:deep(.tui-image-editor-range-wrap),
+:deep(.tui-image-editor-filter-options) {
+  overflow: visible !important;
+}
+
+/* Ensure all parent elements of color picker allow overflow */
+:deep(.tie-filter-tint-color),
+:deep(.tie-filter-multiply-color),
+:deep(.tie-filter-blend-color) {
+  overflow: visible !important;
+  position: relative;
+}
+
+/* Make sure the colorpicker palette is fully visible */
+:deep(.tui-colorpicker-palette-container) {
+  overflow: visible !important;
+}
+
+:deep(.tui-colorpicker-clearfix) {
+  overflow: visible !important;
+}
+
+/* Fix the main wrap and container elements */
+:deep(.tui-image-editor-wrap) {
+  overflow: visible !important;
+}
+
+:deep(.tui-image-editor-main) {
+  overflow: visible !important;
+}
+
+:deep(.tui-image-editor-controls) {
+  overflow: visible !important;
+}
+
+/* Ensure the sub-menu element itself allows overflow */
+:deep(.tui-image-editor-submenu > div) {
+  overflow: visible !important;
+}
+
+/* Fix any potential clipping from the header area */
+:deep(.tui-image-editor-header) {
+  overflow: visible !important;
+}
+
+/* Fix color palette buttons being crushed - ensure proper dimensions */
+:deep(.tui-colorpicker-palette-button) {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  display: inline-block !important;
+  margin: 2px !important;
+  padding: 0 !important;
+  border: 1px solid #ccc !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
+}
+
+:deep(.tui-colorpicker-clearfix li) {
+  display: inline-block !important;
+  height: auto !important;
+  min-height: 20px !important;
+}
+
+:deep(.tui-colorpicker-palette-container ul) {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  padding: 5px !important;
+  margin: 0 !important;
+  list-style: none !important;
 }
 </style>
