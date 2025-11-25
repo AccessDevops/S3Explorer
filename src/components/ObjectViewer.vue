@@ -9,7 +9,7 @@
       <div>
         <p class="font-semibold text-lg">{{ t('fileTooLarge') }}</p>
         <p class="text-muted-foreground">
-          {{ formatSize(object.size) }} ({{ t('fileTooLargeLimit') }}: 900 MB)
+          {{ formatSize(object.size) }} ({{ t('fileTooLargeLimit') }}: {{ settingsStore.previewMaxLimitMB }} MB)
         </p>
         <p class="text-sm text-muted-foreground mt-2">{{ t('pleaseDownload') }}</p>
       </div>
@@ -35,9 +35,13 @@
     </div>
 
     <!-- Loading State -->
-    <div v-else-if="loading" class="flex flex-col items-center justify-center py-12">
-      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-      <p class="text-muted-foreground">Loading...</p>
+    <div v-else-if="loading" class="flex items-center justify-center py-12">
+      <div class="w-full max-w-md space-y-3">
+        <p class="text-center text-muted-foreground font-medium">Loading file...</p>
+        <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div class="h-full bg-primary rounded-full animate-progress-indeterminate"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Error State -->
@@ -53,30 +57,41 @@
       <!-- Content-Type Mismatch Warning -->
       <div
         v-if="contentTypeMismatch.mismatch"
-        class="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-700 dark:text-yellow-400 flex items-start gap-3"
+        class="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-700 dark:text-yellow-400"
       >
-        <div class="text-2xl flex-shrink-0">⚠️</div>
-        <div class="flex-1">
-          <p class="font-semibold">Content-Type Mismatch Detected</p>
-          <p class="text-sm mt-1">{{ contentTypeMismatch.message }}</p>
+        <div class="flex items-start gap-3">
+          <div class="text-2xl flex-shrink-0">⚠️</div>
+          <div class="flex-1">
+            <p class="font-semibold">Content-Type Mismatch Detected</p>
+            <p class="text-sm mt-1">{{ contentTypeMismatch.message }}</p>
+          </div>
+        </div>
+        <div class="mt-3 flex justify-end">
+          <button
+            @click="fixContentTypeMismatch"
+            :disabled="changingContentType"
+            class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-600/50 text-white rounded-md transition-colors text-sm font-medium flex items-center gap-2"
+          >
+            <svg
+              v-if="changingContentType"
+              class="animate-spin h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span v-if="changingContentType">Changing...</span>
+            <span v-else>Change to {{ contentTypeMismatch.expectedType }}</span>
+          </button>
         </div>
       </div>
 
       <!-- Text Viewer/Editor -->
       <div v-if="isText" class="flex flex-col gap-2">
         <!-- Editor Toolbar -->
-        <div class="flex items-center justify-between gap-2 px-2">
-          <div class="flex items-center gap-2">
-            <span class="text-sm text-muted-foreground">{{ t('theme') }}:</span>
-            <select
-              v-model="editorTheme"
-              class="px-2 py-1 text-sm border rounded-md bg-background"
-            >
-              <option value="vs-dark">{{ t('themeDark') }}</option>
-              <option value="vs">{{ t('themeLight') }}</option>
-              <option value="hc-black">{{ t('themeHighContrast') }}</option>
-            </select>
-          </div>
+        <div class="flex items-center justify-end gap-2 px-2">
           <button
             @click="showFullscreenEditor = true"
             class="px-3 py-1 text-sm border rounded-md hover:bg-accent transition-colors flex items-center gap-2"
@@ -103,7 +118,7 @@
           v-model="editedContent"
           :filename="object.key"
           :readonly="!isEditing"
-          :theme="editorTheme"
+          :theme="monacoTheme"
         />
       </div>
 
@@ -128,22 +143,64 @@
         </object>
       </div>
 
+      <!-- Audio Player -->
+      <div v-else-if="isAudio" class="flex flex-col items-center justify-center py-12 space-y-6">
+        <div class="text-6xl">🎵</div>
+        <div class="text-center space-y-2">
+          <p class="font-semibold text-lg">{{ object.key.split('/').pop() }}</p>
+          <p class="text-sm text-muted-foreground">{{ formatSize(object.size) }}</p>
+        </div>
+        <audio
+          v-if="audioUrl"
+          :src="audioUrl"
+          controls
+          class="w-full max-w-2xl rounded-lg shadow-lg"
+          preload="metadata"
+        >
+          <div class="text-center py-6 text-muted-foreground">
+            <p>Your browser doesn't support audio playback.</p>
+            <p class="text-sm mt-2">Please use the Download button to play this file.</p>
+          </div>
+        </audio>
+      </div>
+
+      <!-- Video Player -->
+      <div v-else-if="isVideo" class="flex flex-col items-center justify-center py-12 space-y-6">
+        <div class="text-6xl">🎬</div>
+        <div class="text-center space-y-2">
+          <p class="font-semibold text-lg">{{ object.key.split('/').pop() }}</p>
+          <p class="text-sm text-muted-foreground">{{ formatSize(object.size) }}</p>
+        </div>
+        <video
+          v-if="videoUrl"
+          :src="videoUrl"
+          controls
+          class="w-full max-w-2xl max-h-[500px] rounded-lg shadow-lg object-contain"
+          preload="metadata"
+        >
+          <div class="text-center py-6 text-muted-foreground">
+            <p>Your browser doesn't support video playback.</p>
+            <p class="text-sm mt-2">Please use the Download button to view this file.</p>
+          </div>
+        </video>
+      </div>
+
       <!-- Binary File -->
       <div v-else class="text-center py-12 text-muted-foreground space-y-4">
         <div class="text-5xl mb-4">📦</div>
         <p class="font-semibold">Binary file ({{ formatSize(object.size) }})</p>
-        <p>Cannot preview this file type. Please download to view.</p>
+        <p v-if="!suggestedContentType">Cannot preview this file type. Please download to view.</p>
 
-        <!-- Option to convert to text -->
-        <div class="mt-6 p-4 border border-yellow-500/30 bg-yellow-500/10 rounded-lg inline-block">
-          <p class="text-sm text-yellow-700 dark:text-yellow-400 mb-3">
-            {{ t('tryViewAsText') }}
+        <!-- Option to try loading with suggested content type -->
+        <div v-if="suggestedContentType" class="mt-6 p-4 border border-blue-500/30 bg-blue-500/10 rounded-lg inline-block">
+          <p class="text-sm text-blue-700 dark:text-blue-400 mb-3">
+            Try to load it as <strong>{{ suggestedContentType.label }}</strong>
           </p>
           <button
-            @click="showChangeContentTypeConfirm"
-            class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md transition-colors text-sm font-medium"
+            @click="tryLoadWithSuggestedType"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium"
           >
-            {{ t('changeToTextType') }}
+            Load as {{ suggestedContentType.label }}
           </button>
         </div>
       </div>
@@ -156,20 +213,7 @@
     >
       <!-- Fullscreen Toolbar -->
       <div class="flex items-center justify-between gap-4 p-4 border-b bg-card">
-        <div class="flex items-center gap-4">
-          <h3 class="font-semibold">{{ object.key }}</h3>
-          <div class="flex items-center gap-2">
-            <span class="text-sm text-muted-foreground">{{ t('theme') }}:</span>
-            <select
-              v-model="editorTheme"
-              class="px-2 py-1 text-sm border rounded-md bg-background"
-            >
-              <option value="vs-dark">{{ t('themeDark') }}</option>
-              <option value="vs">{{ t('themeLight') }}</option>
-              <option value="hc-black">{{ t('themeHighContrast') }}</option>
-            </select>
-          </div>
-        </div>
+        <h3 class="font-semibold">{{ object.key }}</h3>
         <button
           @click="showFullscreenEditor = false"
           class="px-3 py-1.5 text-sm border rounded-md hover:bg-accent transition-colors flex items-center gap-2"
@@ -197,7 +241,7 @@
           v-model="editedContent"
           :filename="object.key"
           :readonly="!isEditing"
-          :theme="editorTheme"
+          :theme="monacoTheme"
         />
       </div>
     </div>
@@ -207,6 +251,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '../stores/app'
+import { useSettingsStore } from '../stores/settings'
 import { useToast } from '../composables/useToast'
 import { useI18n } from '../composables/useI18n'
 import { getObject, putObject, changeContentType } from '../services/tauri'
@@ -223,6 +268,7 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
+const settingsStore = useSettingsStore()
 const toast = useToast()
 const { t } = useI18n()
 const loading = ref(true)
@@ -233,15 +279,18 @@ const isEditing = ref(false)
 const editedContent = ref('')
 const saving = ref(false)
 const forceLoad = ref(false)
-const editorTheme = ref<'vs' | 'vs-dark' | 'hc-black'>('vs-dark')
 const showFullscreenEditor = ref(false)
+const changingContentType = ref(false)
 
-// File size limits
-const SIZE_100MB = 100 * 1024 * 1024 // 104857600 bytes
-const SIZE_900MB = 900 * 1024 * 1024 // 943718400 bytes
+// Get Monaco theme from settings store
+const monacoTheme = computed(() => settingsStore.getMonacoTheme)
 
-const isTooLarge = computed(() => props.object.size > SIZE_900MB)
-const isLarge = computed(() => props.object.size > SIZE_100MB && props.object.size <= SIZE_900MB)
+// File size limits from settings
+const SIZE_WARNING_LIMIT = computed(() => settingsStore.previewWarningLimitMB * 1024 * 1024)
+const SIZE_MAX_LIMIT = computed(() => settingsStore.previewMaxLimitMB * 1024 * 1024)
+
+const isTooLarge = computed(() => props.object.size > SIZE_MAX_LIMIT.value)
+const isLarge = computed(() => props.object.size > SIZE_WARNING_LIMIT.value && props.object.size <= SIZE_MAX_LIMIT.value)
 
 // Utility functions for content-type detection
 function getFileExtension(filename: string): string {
@@ -311,14 +360,14 @@ function getExpectedContentType(filename: string): string | null {
 
 const contentTypeMismatch = computed(() => {
   if (!contentType.value) {
-    return { mismatch: false, message: '' }
+    return { mismatch: false, message: '', expectedType: '' }
   }
 
   const filename = props.object.key.split('/').pop() || ''
   const expectedContentType = getExpectedContentType(filename)
 
   if (!expectedContentType) {
-    return { mismatch: false, message: '' }
+    return { mismatch: false, message: '', expectedType: '' }
   }
 
   // Normalize content types for comparison
@@ -329,10 +378,11 @@ const contentTypeMismatch = computed(() => {
     return {
       mismatch: true,
       message: `Content-Type mismatch: File extension suggests "${normalizedExpected}" but actual type is "${normalizedActual}"`,
+      expectedType: normalizedExpected,
     }
   }
 
-  return { mismatch: false, message: '' }
+  return { mismatch: false, message: '', expectedType: '' }
 })
 
 const isText = computed(() => {
@@ -408,15 +458,80 @@ const isPdf = computed(() => {
   return key.endsWith('.pdf')
 })
 
+const isAudio = computed(() => {
+  // Check by content type
+  if (contentType.value?.startsWith('audio/')) {
+    return true
+  }
+
+  // Fallback: check by file extension
+  const key = props.object.key.toLowerCase()
+  const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma', '.opus']
+  return audioExtensions.some((ext) => key.endsWith(ext))
+})
+
+const isVideo = computed(() => {
+  // Check by content type
+  if (contentType.value?.startsWith('video/')) {
+    return true
+  }
+
+  // Fallback: check by file extension
+  const key = props.object.key.toLowerCase()
+  const videoExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v', '.mpeg', '.mpg']
+  return videoExtensions.some((ext) => key.endsWith(ext))
+})
+
 const textContent = computed(() => {
   if (!content.value || !isText.value) return ''
   const decoder = new TextDecoder()
   return decoder.decode(content.value)
 })
 
+// Suggested content type based on file extension for binary files
+const suggestedContentType = computed(() => {
+  // Only suggest if current detection shows it as binary (not text, image, pdf, audio, video)
+  if (isText.value || isImage.value || isPdf.value || isAudio.value || isVideo.value) {
+    return null
+  }
+
+  const filename = props.object.key.split('/').pop() || ''
+  const expectedType = getExpectedContentType(filename)
+
+  if (!expectedType) {
+    return null
+  }
+
+  // Determine the label based on the content type
+  let label = 'Unknown'
+  if (expectedType.startsWith('image/')) {
+    label = 'Image'
+  } else if (expectedType.startsWith('video/')) {
+    label = 'Video'
+  } else if (expectedType.startsWith('audio/')) {
+    label = 'Audio'
+  } else if (expectedType === 'application/pdf') {
+    label = 'PDF'
+  } else if (expectedType.startsWith('text/') ||
+             expectedType === 'application/json' ||
+             expectedType === 'application/xml' ||
+             expectedType === 'application/javascript') {
+    label = 'Text'
+  } else {
+    label = expectedType.split('/')[1] || 'File'
+  }
+
+  return {
+    type: expectedType,
+    label: label
+  }
+})
+
 // Blob URLs stored as refs to allow proper cleanup
 const imageUrl = ref<string>('')
 const pdfUrl = ref<string>('')
+const audioUrl = ref<string>('')
+const videoUrl = ref<string>('')
 
 // Function to revoke Blob URLs and free memory
 function revokeObjectUrls() {
@@ -428,10 +543,18 @@ function revokeObjectUrls() {
     URL.revokeObjectURL(pdfUrl.value)
     pdfUrl.value = ''
   }
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+    audioUrl.value = ''
+  }
+  if (videoUrl.value) {
+    URL.revokeObjectURL(videoUrl.value)
+    videoUrl.value = ''
+  }
 }
 
 // Watch for content changes and create/revoke Blob URLs accordingly
-watch([content, contentType, isImage, isPdf], () => {
+watch([content, contentType, isImage, isPdf, isAudio, isVideo], () => {
   // Revoke old URLs first to free memory
   revokeObjectUrls()
 
@@ -444,6 +567,16 @@ watch([content, contentType, isImage, isPdf], () => {
   if (content.value && isPdf.value) {
     const blob = new Blob([content.value as BlobPart], { type: 'application/pdf' })
     pdfUrl.value = URL.createObjectURL(blob)
+  }
+
+  if (content.value && isAudio.value) {
+    const blob = new Blob([content.value as BlobPart], { type: contentType.value || 'audio/mpeg' })
+    audioUrl.value = URL.createObjectURL(blob)
+  }
+
+  if (content.value && isVideo.value) {
+    const blob = new Blob([content.value as BlobPart], { type: contentType.value || 'video/mp4' })
+    videoUrl.value = URL.createObjectURL(blob)
   }
 }, { immediate: true })
 
@@ -541,40 +674,52 @@ function loadLargeFile() {
   loadContent()
 }
 
-// Change content-type to text/plain
-async function showChangeContentTypeConfirm() {
-  const fileName = props.object.key.split('/').pop() || props.object.key
+// Try loading the file with the suggested content type based on extension
+function tryLoadWithSuggestedType() {
+  if (!suggestedContentType.value) {
+    return
+  }
 
-  // Use browser's confirm dialog with warning
-  const confirmed = confirm(
-    t('changeContentTypeWarning', fileName)
-  )
+  // Override the content type locally to trigger the appropriate viewer
+  contentType.value = suggestedContentType.value.type
 
-  if (!confirmed) return
+  // The watch on [content, contentType, isImage, isPdf, isAudio, isVideo] will automatically
+  // recreate the Blob URLs with the new content type, triggering the appropriate viewer
+}
 
+// Change content-type in S3 to the expected type based on file extension
+async function fixContentTypeMismatch() {
   if (!appStore.currentProfile || !appStore.currentBucket) {
     toast.error('No profile or bucket selected')
     return
   }
 
+  const filename = props.object.key.split('/').pop() || ''
+  const expectedType = getExpectedContentType(filename)
+
+  if (!expectedType) {
+    toast.error('Cannot determine expected content type')
+    return
+  }
+
   try {
-    loading.value = true
+    changingContentType.value = true
 
     await changeContentType(
       appStore.currentProfile.id,
       appStore.currentBucket,
       props.object.key,
-      'text/plain'
+      expectedType
     )
 
-    toast.success(t('contentTypeChangeSuccess'))
+    toast.success(`Content-Type changed to ${expectedType}`)
 
-    // Reload the object to show it as text
+    // Reload the object to show it with the correct content type
     await loadContent()
   } catch (e) {
-    toast.error(`${t('contentTypeChangeFailed')}: ${e}`)
+    toast.error(`Failed to change content type: ${e}`)
   } finally {
-    loading.value = false
+    changingContentType.value = false
   }
 }
 
@@ -591,7 +736,7 @@ onMounted(async () => {
     return
   }
 
-  // Auto-load for files <= 100MB
+  // Auto-load for files <= warning limit (default 10MB)
   await loadContent()
 })
 </script>

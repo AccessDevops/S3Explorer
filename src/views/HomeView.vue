@@ -7,7 +7,7 @@
       </div>
       <SettingsButton />
     </div>
-    <div class="flex-1 overflow-hidden bg-background">
+    <div class="flex-1 overflow-hidden bg-background relative">
       <ObjectBrowser v-if="appStore.hasBucket" />
       <div v-else class="flex flex-col items-center justify-center h-full p-8 text-center">
         <Card class="max-w-md">
@@ -21,6 +21,20 @@
             </CardDescription>
           </CardHeader>
         </Card>
+      </div>
+      <!-- Footer - visible on home page only -->
+      <div v-if="!appStore.hasBucket" class="absolute bottom-4 left-0 right-0 text-center">
+        <p class="text-xs text-muted-foreground/40">
+          made with <span class="text-red-500/40">❤️</span> by
+          <a
+            href="https://github.com/cbarange"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-primary/50 hover:text-primary/70 hover:underline transition-colors"
+          >
+            cbarange
+          </a>
+        </p>
       </div>
     </div>
   </div>

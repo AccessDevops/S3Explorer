@@ -95,7 +95,7 @@
         <!-- Search progress bar -->
         <div
           v-if="searchQuery.trim()"
-          class="absolute top-full left-0 right-0 mt-1 bg-card border rounded-md shadow-sm overflow-hidden z-10"
+          class="absolute top-full left-0 right-0 mt-1 bg-card border rounded-md shadow-lg overflow-hidden z-50"
         >
           <div class="flex items-center justify-between px-3 py-2 text-sm">
             <!-- INDEX SEARCH MODE -->
@@ -105,7 +105,7 @@
                 <span class="font-medium text-primary">{{ searchProgress }} {{ t('found') }}</span>
               </div>
               <div class="text-xs text-muted-foreground">
-                {{ t('instant') }} ({{ searchDuration }}ms)
+                {{ t('instant') }} ({{ formatTime(searchDuration / 1000) }})
               </div>
             </div>
 
@@ -132,7 +132,7 @@
               </div>
               <!-- Final stats (when search is complete) -->
               <div v-if="!isSearching && searchPagesScanned > 0" class="text-xs text-muted-foreground">
-                {{ t('scannedPages', searchPagesScanned) }}
+                {{ t('scannedPages', searchPagesScanned) }} · {{ formatTime(searchDuration / 1000) }}
               </div>
             </div>
             <Button v-if="isSearching" size="sm" variant="ghost" @click="stopSearch" :title="t('stopSearch')">
@@ -331,7 +331,7 @@
             :data-object-key="obj.key"
             @click="handleFileClick($event, obj, index + filteredFolders.length)"
             @dblclick="viewObject(obj)"
-            @contextmenu.stop="showContextMenu($event, obj)"
+            @contextmenu.stop="showContextMenu($event, obj, index + filteredFolders.length)"
             @dragstart="handleFileDragStart($event, obj)"
             @dragend="handleFileDragEnd($event, obj)"
           >
@@ -790,11 +790,12 @@
         <Tabs default-value="content" class="w-full">
           <TabsList>
             <TabsTrigger value="content">{{ t('content') }}</TabsTrigger>
-            <TabsTrigger value="metadata">{{ t('metadata') }}</TabsTrigger>
-            <TabsTrigger value="versions">{{ t('versions') }}</TabsTrigger>
-            <TabsTrigger value="permissions">{{ t('permissions') }}</TabsTrigger>
-            <TabsTrigger value="tags">{{ t('tags') }}</TabsTrigger>
-            <TabsTrigger value="events">{{ t('eventLog') }}</TabsTrigger>
+            <TabsTrigger value="metadata">{{ t('metadata') }} ({{ metadataCount }})</TabsTrigger>
+            <TabsTrigger value="versions">{{ t('versions') }} ({{ versionsCount }})</TabsTrigger>
+            <TabsTrigger value="permissions">{{ t('permissions') }} ({{ permissionsCount }})</TabsTrigger>
+            <TabsTrigger value="tags">{{ t('tags') }} ({{ tagsCount }})</TabsTrigger>
+            <TabsTrigger value="headers">{{ t('headers') }} ({{ headersCount }})</TabsTrigger>
+            <TabsTrigger value="events">{{ t('eventLog') }} ({{ eventsCount }})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="content">
@@ -907,8 +908,270 @@
 
           <TabsContent value="tags">
             <div class="overflow-y-auto max-h-[60vh]">
-              <div class="text-center py-8 text-muted-foreground">
+              <!-- Loading State -->
+              <div v-if="loadingTags" class="text-center py-8">
+                <p class="text-muted-foreground">{{ t('loading') }}...</p>
+              </div>
+
+              <!-- Tags as Chips -->
+              <div v-else-if="viewModalTags.length > 0" class="p-4">
+                <div class="flex flex-wrap gap-2">
+                  <div
+                    v-for="(tag, index) in viewModalTags"
+                    :key="index"
+                  >
+                    <!-- Edit Mode for this tag -->
+                    <div v-if="editingTag && editingTag.index === index" class="flex items-center gap-2 p-2 border rounded-lg bg-card">
+                      <Input
+                        v-model="editingTag.key"
+                        :placeholder="t('key')"
+                        class="w-32 h-8 text-xs"
+                      />
+                      <span class="text-muted-foreground">:</span>
+                      <Input
+                        v-model="editingTag.value"
+                        :placeholder="t('value')"
+                        class="w-32 h-8 text-xs"
+                      />
+                      <button
+                        @click="saveEditTag"
+                        class="p-1 hover:bg-accent rounded transition-colors"
+                        :title="t('save')"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </button>
+                      <button
+                        @click="cancelEditTag"
+                        class="p-1 hover:bg-accent rounded transition-colors"
+                        :title="t('cancel')"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                    </div>
+
+                    <!-- View Mode - Chip -->
+                    <div
+                      v-else
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-full text-sm group hover:bg-primary/15 transition-colors"
+                    >
+                      <span class="font-medium text-primary">{{ tag.key }}</span>
+                      <span class="text-muted-foreground">:</span>
+                      <span class="text-foreground">{{ tag.value }}</span>
+
+                      <!-- Action buttons (show on hover) -->
+                      <div class="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          @click="startEditTag(index)"
+                          class="p-1 hover:bg-primary/20 rounded transition-colors"
+                          :title="t('edit')"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                          </svg>
+                        </button>
+                        <button
+                          @click="deleteTag(index)"
+                          class="p-1 hover:bg-destructive/20 hover:text-destructive rounded transition-colors"
+                          :title="t('delete')"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Empty State -->
+              <div v-else class="text-center py-8 text-muted-foreground">
                 <p>{{ t('noTags') }}</p>
+              </div>
+
+              <!-- Add Tag Section -->
+              <div class="p-4 border-t">
+                <div v-if="showAddTag" class="space-y-3">
+                  <div class="flex gap-2">
+                    <Input
+                      v-model="newTag.key"
+                      :placeholder="t('key')"
+                      class="flex-1"
+                      @keyup.enter="saveNewTag"
+                    />
+                    <Input
+                      v-model="newTag.value"
+                      :placeholder="t('value')"
+                      class="flex-1"
+                      @keyup.enter="saveNewTag"
+                    />
+                  </div>
+                  <div class="flex gap-2 justify-end">
+                    <Button size="sm" @click="saveNewTag">
+                      {{ t('add') }}
+                    </Button>
+                    <Button size="sm" variant="ghost" @click="showAddTag = false; newTag = { key: '', value: '' }">
+                      {{ t('cancel') }}
+                    </Button>
+                  </div>
+                </div>
+                <Button v-else @click="showAddTag = true" size="sm" class="w-full">
+                  + {{ t('addTag') }}
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="headers">
+            <div class="overflow-y-auto max-h-[60vh]">
+              <!-- Loading State -->
+              <div v-if="loadingHeaders" class="text-center py-8">
+                <p class="text-muted-foreground">{{ t('loading') }}...</p>
+              </div>
+
+              <!-- Headers Content -->
+              <div v-else-if="viewModalHeaders" class="p-4 space-y-6">
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-2">
+                  <Button v-if="!editingHeaders" size="sm" @click="startEditHeaders">
+                    {{ t('edit') }}
+                  </Button>
+                  <template v-else>
+                    <Button size="sm" @click="saveHeaders">
+                      {{ t('save') }}
+                    </Button>
+                    <Button size="sm" variant="ghost" @click="cancelEditHeaders">
+                      {{ t('cancel') }}
+                    </Button>
+                  </template>
+                </div>
+
+                <!-- Standard Headers Table -->
+                <div>
+                  <h4 class="font-medium text-sm mb-3">{{ t('standardHeaders') }}</h4>
+                  <div class="border rounded-lg overflow-hidden">
+                    <table class="w-full">
+                      <thead class="bg-muted">
+                        <tr>
+                          <th class="text-left p-3 font-medium text-sm w-1/3">{{ t('header') }}</th>
+                          <th class="text-left p-3 font-medium text-sm">{{ t('value') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <!-- Content-Type -->
+                        <tr class="border-t">
+                          <td class="p-3 font-medium text-sm">Content-Type</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ viewModalHeaders.content_type || '-' }}</span>
+                            <Input v-else v-model="editedHeaders!.content_type" placeholder="text/html" class="text-sm" />
+                          </td>
+                        </tr>
+
+                        <!-- Cache-Control -->
+                        <tr class="border-t">
+                          <td class="p-3 font-medium text-sm">Cache-Control</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ viewModalHeaders.cache_control || '-' }}</span>
+                            <Input v-else v-model="editedHeaders!.cache_control" placeholder="max-age=3600" class="text-sm" />
+                          </td>
+                        </tr>
+
+                        <!-- Content-Encoding -->
+                        <tr class="border-t">
+                          <td class="p-3 font-medium text-sm">Content-Encoding</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ viewModalHeaders.content_encoding || '-' }}</span>
+                            <Input v-else v-model="editedHeaders!.content_encoding" placeholder="gzip" class="text-sm" />
+                          </td>
+                        </tr>
+
+                        <!-- Content-Disposition -->
+                        <tr class="border-t">
+                          <td class="p-3 font-medium text-sm">Content-Disposition</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ viewModalHeaders.content_disposition || '-' }}</span>
+                            <Input v-else v-model="editedHeaders!.content_disposition" placeholder="inline" class="text-sm" />
+                          </td>
+                        </tr>
+
+                        <!-- Content-Language -->
+                        <tr class="border-t">
+                          <td class="p-3 font-medium text-sm">Content-Language</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ viewModalHeaders.content_language || '-' }}</span>
+                            <Input v-else v-model="editedHeaders!.content_language" placeholder="en-US" class="text-sm" />
+                          </td>
+                        </tr>
+
+                        <!-- Expires -->
+                        <tr class="border-t">
+                          <td class="p-3 font-medium text-sm">Expires</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ viewModalHeaders.expires || '-' }}</span>
+                            <Input v-else v-model="editedHeaders!.expires" placeholder="Thu, 01 Dec 2024 16:00:00 GMT" class="text-sm" />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Custom Metadata (x-amz-meta-*) -->
+                <div>
+                  <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-medium text-sm">{{ t('customMetadata') }}</h4>
+                    <Button v-if="editingHeaders" size="sm" variant="outline" @click="showAddCustomHeader = true">
+                      + {{ t('addHeader') }}
+                    </Button>
+                  </div>
+
+                  <!-- Custom Headers Table -->
+                  <div v-if="Object.keys(viewModalHeaders.metadata).length > 0" class="border rounded-lg overflow-hidden">
+                    <table class="w-full">
+                      <thead class="bg-muted">
+                        <tr>
+                          <th class="text-left p-3 font-medium text-sm">{{ t('key') }}</th>
+                          <th class="text-left p-3 font-medium text-sm">{{ t('value') }}</th>
+                          <th v-if="editingHeaders" class="w-20 p-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(value, key) in viewModalHeaders.metadata" :key="key" class="border-t">
+                          <td class="p-3 font-medium text-sm">{{ key }}</td>
+                          <td class="p-3">
+                            <span v-if="!editingHeaders" class="text-sm">{{ value }}</span>
+                            <Input v-else v-model="editedHeaders!.metadata[key]" class="text-sm" />
+                          </td>
+                          <td v-if="editingHeaders" class="p-3">
+                            <Button size="sm" variant="ghost" @click="deleteCustomHeader(key)">
+                              {{ t('delete') }}
+                            </Button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p v-else class="text-sm text-muted-foreground text-center py-4 border rounded-lg">
+                    {{ t('noCustomHeaders') }}
+                  </p>
+
+                  <!-- Add Custom Header Form -->
+                  <div v-if="showAddCustomHeader && editingHeaders" class="mt-3 p-3 border rounded-lg bg-muted/50">
+                    <div class="flex gap-2">
+                      <Input v-model="newCustomHeader.key" :placeholder="t('key')" class="flex-1 text-sm" />
+                      <Input v-model="newCustomHeader.value" :placeholder="t('value')" class="flex-1 text-sm" />
+                      <Button size="sm" @click="addCustomHeader">{{ t('add') }}</Button>
+                      <Button size="sm" variant="ghost" @click="showAddCustomHeader = false; newCustomHeader = { key: '', value: '' }">{{ t('cancel') }}</Button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </TabsContent>
@@ -934,6 +1197,7 @@
       :x="contextMenu.x"
       :y="contextMenu.y"
       :target-object="contextMenu.object"
+      :current-content-type="contextMenu.currentContentType"
       :show-empty="emptyContextMenu.show"
       :empty-x="emptyContextMenu.x"
       :empty-y="emptyContextMenu.y"
@@ -1326,12 +1590,17 @@ import {
   listObjects,
   copyObject,
   listObjectVersions,
+  getObjectTags,
+  putObjectTags,
+  deleteObjectTags,
+  getObjectMetadata,
+  updateObjectMetadata,
 } from '../services/tauri'
 import { save, open } from '@tauri-apps/api/dialog'
 import { writeBinaryFile } from '@tauri-apps/api/fs'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import type { S3Object, ObjectVersion } from '../types'
+import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse } from '../types'
 import ObjectViewer from './ObjectViewer.vue'
 import ContextMenu from './ContextMenu.vue'
 import IndexButton from './IndexButton.vue'
@@ -1631,11 +1900,12 @@ const objectViewerRef = ref<InstanceType<typeof ObjectViewer> | null>(null)
 const pasting = ref(false)
 
 // Context menu refs (will be migrated to contextMenus grouped state)
-const contextMenu = ref<{ show: boolean; x: number; y: number; object: S3Object | null }>({
+const contextMenu = ref<{ show: boolean; x: number; y: number; object: S3Object | null; currentContentType: string | null }>({
   show: false,
   x: 0,
   y: 0,
   object: null,
+  currentContentType: null,
 })
 const emptyContextMenu = ref<{ show: boolean; x: number; y: number }>({
   show: false,
@@ -1693,6 +1963,21 @@ const viewingObject = ref<S3Object | null>(null)
 const showViewModal = ref(false)
 const viewModalVersions = ref<ObjectVersion[]>([])
 
+// Tags refs
+const viewModalTags = ref<ObjectTag[]>([])
+const loadingTags = ref(false)
+const editingTag = ref<{ index: number; key: string; value: string } | null>(null)
+const newTag = ref({ key: '', value: '' })
+const showAddTag = ref(false)
+
+// Headers refs
+const viewModalHeaders = ref<GetObjectMetadataResponse | null>(null)
+const loadingHeaders = ref(false)
+const editingHeaders = ref(false)
+const editedHeaders = ref<GetObjectMetadataResponse | null>(null)
+const showAddCustomHeader = ref(false)
+const newCustomHeader = ref({ key: '', value: '' })
+
 // Versions refs (will be migrated to versions grouped state)
 const objectVersions = ref<ObjectVersion[]>([])
 const versionsObject = ref<S3Object | null>(null)
@@ -1743,6 +2028,34 @@ const rowPadding = computed(() => (isCompactView.value ? 'p-0.5' : 'p-1.5'))
 const rowGap = computed(() => (isCompactView.value ? 'gap-0.5' : 'gap-1.5'))
 const iconSize = computed(() => (isCompactView.value ? 16 : 18))
 const textSize = computed(() => 'text-xs')
+
+// Tab counters for view modal
+const versionsCount = computed(() => viewModalVersions.value.length)
+const tagsCount = computed(() => viewModalTags.value.length)
+const headersCount = computed(() => {
+  if (!viewModalHeaders.value) return 0
+  let count = 0
+  // Count standard headers that have values
+  if (viewModalHeaders.value.content_type) count++
+  if (viewModalHeaders.value.content_encoding) count++
+  if (viewModalHeaders.value.content_language) count++
+  if (viewModalHeaders.value.content_disposition) count++
+  if (viewModalHeaders.value.cache_control) count++
+  if (viewModalHeaders.value.expires) count++
+  // Count custom metadata headers
+  count += Object.keys(viewModalHeaders.value.metadata || {}).length
+  return count
+})
+const metadataCount = computed(() => {
+  if (!viewingObject.value) return 0
+  let count = 3 // key, size, lastModified always present
+  if (viewingObject.value.storage_class) count++
+  if (viewingObject.value.e_tag) count++
+  if (objectViewerRef.value?.contentType) count++
+  return count
+})
+const permissionsCount = computed(() => 0) // No permissions implemented yet
+const eventsCount = computed(() => 0) // No events implemented yet
 
 // Upload progress tracking (handled by RustUploadManager now)
 
@@ -2035,8 +2348,7 @@ async function handleBuildIndexFromPrompt() {
   try {
     const index = await searchIndex.buildIndex(
       appStore.currentProfile.id,
-      appStore.currentBucket,
-      settingsStore.batchSize
+      appStore.currentBucket
     )
     hasSearchIndex.value = true
     currentIndexSize.value = index.totalObjects
@@ -2055,8 +2367,7 @@ async function handleUpdateIndexFromPrompt() {
   try {
     const index = await searchIndex.rebuildIndex(
       appStore.currentProfile.id,
-      appStore.currentBucket,
-      settingsStore.batchSize
+      appStore.currentBucket
     )
     hasSearchIndex.value = true
     currentIndexSize.value = index.totalObjects
@@ -2234,6 +2545,8 @@ watch(searchQuery, async (query) => {
       globalSearchResults.value = []
     } finally {
       if (!searchAbortController.value?.signal.aborted) {
+        // Calculate total search duration for live search
+        searchDuration.value = Date.now() - searchStartTime.value
         isSearching.value = false
       }
       searchAbortController.value = null
@@ -2299,7 +2612,7 @@ watch(
           if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
             // Auto-rebuild for small buckets (< threshold objects)
             logger.debug(`[Index] Auto-rebuilding expired index for small bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
-            searchIndex.rebuildIndex(profileId, newBucket, settingsStore.batchSize)
+            searchIndex.rebuildIndex(profileId, newBucket)
               .then((index) => {
                 hasSearchIndex.value = true
                 currentIndexSize.value = index.totalObjects
@@ -2326,7 +2639,7 @@ watch(
         if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
           // Auto-build for small buckets (< threshold objects)
           logger.debug(`[Index] Auto-building index for bucket with ${estimatedCount} objects (threshold=${settingsStore.indexAutoBuildThreshold})`)
-          searchIndex.buildIndex(profileId, newBucket, settingsStore.batchSize)
+          searchIndex.buildIndex(profileId, newBucket)
             .then((index) => {
               hasSearchIndex.value = true
               currentIndexSize.value = index.totalObjects
@@ -3230,8 +3543,8 @@ async function downloadFolderDragDrop(folder: string) {
 async function viewObject(obj: S3Object) {
   viewingObject.value = obj
   showViewModal.value = true
-  // Load versions for the object
-  await loadViewModalVersions()
+  // Load versions, tags, and headers for the object
+  await Promise.all([loadViewModalVersions(), loadViewModalTags(), loadViewModalHeaders()])
 }
 
 async function loadViewModalVersions() {
@@ -3248,6 +3561,169 @@ async function loadViewModalVersions() {
     logger.error('Failed to load versions:', e)
     viewModalVersions.value = []
   }
+}
+
+async function loadViewModalTags() {
+  if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket) return
+
+  loadingTags.value = true
+  try {
+    const response = await getObjectTags(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      viewingObject.value.key
+    )
+    viewModalTags.value = response.tags
+  } catch (e) {
+    logger.error('Failed to load tags:', e)
+    viewModalTags.value = []
+  } finally {
+    loadingTags.value = false
+  }
+}
+
+async function saveNewTag() {
+  if (
+    !viewingObject.value ||
+    !appStore.currentProfile ||
+    !appStore.currentBucket ||
+    !newTag.value.key.trim()
+  )
+    return
+
+  try {
+    const updatedTags = [...viewModalTags.value, { key: newTag.value.key, value: newTag.value.value }]
+    await putObjectTags(appStore.currentProfile.id, appStore.currentBucket, viewingObject.value.key, updatedTags)
+    viewModalTags.value = updatedTags
+    newTag.value = { key: '', value: '' }
+    showAddTag.value = false
+    toast.success(t('tagAdded'))
+  } catch (e) {
+    logger.error('Failed to add tag:', e)
+    toast.error(t('errorOccurred'))
+  }
+}
+
+function startEditTag(index: number) {
+  const tag = viewModalTags.value[index]
+  editingTag.value = { index, key: tag.key, value: tag.value }
+}
+
+function cancelEditTag() {
+  editingTag.value = null
+}
+
+async function saveEditTag() {
+  if (
+    !editingTag.value ||
+    !viewingObject.value ||
+    !appStore.currentProfile ||
+    !appStore.currentBucket
+  )
+    return
+
+  try {
+    const updatedTags = [...viewModalTags.value]
+    updatedTags[editingTag.value.index] = {
+      key: editingTag.value.key,
+      value: editingTag.value.value,
+    }
+    await putObjectTags(appStore.currentProfile.id, appStore.currentBucket, viewingObject.value.key, updatedTags)
+    viewModalTags.value = updatedTags
+    editingTag.value = null
+    toast.success(t('tagUpdated'))
+  } catch (e) {
+    logger.error('Failed to update tag:', e)
+    toast.error(t('errorOccurred'))
+  }
+}
+
+async function deleteTag(index: number) {
+  if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket) return
+
+  try {
+    const updatedTags = viewModalTags.value.filter((_, i) => i !== index)
+    if (updatedTags.length === 0) {
+      // If no tags left, delete all tags
+      await deleteObjectTags(appStore.currentProfile.id, appStore.currentBucket, viewingObject.value.key)
+    } else {
+      await putObjectTags(appStore.currentProfile.id, appStore.currentBucket, viewingObject.value.key, updatedTags)
+    }
+    viewModalTags.value = updatedTags
+    toast.success(t('tagDeleted'))
+  } catch (e) {
+    logger.error('Failed to delete tag:', e)
+    toast.error(t('errorOccurred'))
+  }
+}
+
+// Headers Management Functions
+async function loadViewModalHeaders() {
+  if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket) return
+
+  loadingHeaders.value = true
+  try {
+    const response = await getObjectMetadata(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      viewingObject.value.key
+    )
+    viewModalHeaders.value = response
+    editedHeaders.value = JSON.parse(JSON.stringify(response)) // Deep copy
+  } catch (e) {
+    logger.error('Failed to load headers:', e)
+    viewModalHeaders.value = null
+  } finally {
+    loadingHeaders.value = false
+  }
+}
+
+function startEditHeaders() {
+  editingHeaders.value = true
+  if (viewModalHeaders.value) {
+    editedHeaders.value = JSON.parse(JSON.stringify(viewModalHeaders.value))
+  }
+}
+
+function cancelEditHeaders() {
+  editingHeaders.value = false
+  showAddCustomHeader.value = false
+  if (viewModalHeaders.value) {
+    editedHeaders.value = JSON.parse(JSON.stringify(viewModalHeaders.value))
+  }
+}
+
+async function saveHeaders() {
+  if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket || !editedHeaders.value) return
+
+  try {
+    await updateObjectMetadata(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      viewingObject.value.key,
+      editedHeaders.value
+    )
+    viewModalHeaders.value = JSON.parse(JSON.stringify(editedHeaders.value))
+    editingHeaders.value = false
+    showAddCustomHeader.value = false
+    toast.success(t('headersUpdated'))
+  } catch (e) {
+    logger.error('Failed to update headers:', e)
+    toast.error(t('errorOccurred'))
+  }
+}
+
+function addCustomHeader() {
+  if (!editedHeaders.value || !newCustomHeader.value.key.trim()) return
+
+  editedHeaders.value.metadata[newCustomHeader.value.key] = newCustomHeader.value.value
+  newCustomHeader.value = { key: '', value: '' }
+  showAddCustomHeader.value = false
+}
+
+function deleteCustomHeader(key: string) {
+  if (!editedHeaders.value) return
+  delete editedHeaders.value.metadata[key]
 }
 
 async function deleteObjectConfirm(key: string) {
@@ -3402,13 +3878,35 @@ async function handleFileDrop(paths: string[]) {
 }
 
 // Context menu functions
-function showContextMenu(event: MouseEvent, obj: S3Object) {
+async function showContextMenu(event: MouseEvent, obj: S3Object, index: number) {
   event.preventDefault()
+
+  // Handle selection: if object is not already selected, select it
+  // If it's already selected (part of multi-selection), keep current selection
+  if (!selectedItems.value.has(obj.key)) {
+    selectedItems.value.clear()
+    selectedItems.value.add(obj.key)
+    lastSelectedIndex.value = index
+  }
+
   contextMenu.value = {
     show: true,
     x: event.clientX,
     y: event.clientY,
     object: obj,
+    currentContentType: null,
+  }
+
+  // Load current content type asynchronously
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+  try {
+    const metadata = await getObjectMetadata(appStore.currentProfile.id, appStore.currentBucket, obj.key)
+    // Only update if the context menu is still showing the same object
+    if (contextMenu.value.show && contextMenu.value.object === obj) {
+      contextMenu.value.currentContentType = metadata.content_type || null
+    }
+  } catch (error) {
+    console.error('Failed to load content type:', error)
   }
 }
 
@@ -3494,21 +3992,28 @@ async function changeContentTypeDirectly(contentType: string) {
     changingContentType.value = true
     const key = contextMenu.value.object.key
 
-    // Get the object content
-    const { getObject } = await import('../services/tauri')
-    const objectData = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-
-    // Put it back with new content type
-    await putObject(
+    // Get current metadata to preserve other headers
+    const currentMetadata = await getObjectMetadata(
       appStore.currentProfile.id,
       appStore.currentBucket,
-      key,
-      objectData.content,
-      contentType
+      key
     )
 
-    // Note: S3Object doesn't store content_type, so we can't update it optimistically
-    // The change is effective on S3, user will see it on next navigation/refresh
+    // Update only the content type, preserve other metadata
+    await updateObjectMetadata(appStore.currentProfile.id, appStore.currentBucket, key, {
+      content_type: contentType,
+      content_encoding: currentMetadata.content_encoding,
+      content_language: currentMetadata.content_language,
+      content_disposition: currentMetadata.content_disposition,
+      cache_control: currentMetadata.cache_control,
+      expires: currentMetadata.expires,
+      metadata: currentMetadata.metadata,
+    })
+
+    // Update the context menu's current content type
+    if (contextMenu.value.object === contextMenu.value.object) {
+      contextMenu.value.currentContentType = contentType
+    }
 
     // Close menus
     closeContextMenu()

@@ -27,7 +27,9 @@ impl S3Adapter {
             "s3browser",
         );
 
-        let region = Region::new(profile.region.clone());
+        // Use provided region or default to "us-east-1"
+        let region_str = profile.region.clone().unwrap_or_else(|| "us-east-1".to_string());
+        let region = Region::new(region_str.clone());
         let region_provider = RegionProviderChain::first_try(region);
 
         // Build base AWS config
@@ -63,7 +65,7 @@ impl S3Adapter {
 
         Ok(Self {
             client,
-            region: profile.region.clone(),
+            region: region_str,
         })
     }
 
@@ -263,6 +265,40 @@ impl S3Adapter {
         Ok((total_size, total_count))
     }
 
+    /// Estimate bucket statistics by listing only the first 1000 objects
+    /// Returns (total_size, total_count, is_estimate)
+    /// - If bucket has <= 1000 objects: returns exact stats with is_estimate=false
+    /// - If bucket has > 1000 objects: returns partial stats with is_estimate=true
+    pub async fn estimate_bucket_stats(&self, bucket_name: &str) -> Result<(i64, i64, bool), AppError> {
+        let mut total_size: i64 = 0;
+        let mut total_count: i64 = 0;
+
+        // List only the first 1000 objects (single request)
+        let output = self
+            .client
+            .list_objects_v2()
+            .bucket(bucket_name)
+            .max_keys(1000)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to list objects: {}", e)))?;
+
+        // Sum up object sizes (skip folder markers)
+        for obj in output.contents() {
+            if let Some(key) = obj.key() {
+                if !key.ends_with('/') {
+                    total_size += obj.size().unwrap_or(0);
+                    total_count += 1;
+                }
+            }
+        }
+
+        // Check if truncated (more than 1000 objects)
+        let is_estimate = output.is_truncated().unwrap_or(false);
+
+        Ok((total_size, total_count, is_estimate))
+    }
+
     /// Calculate folder size by listing ALL objects with the given prefix (including all subdirectories recursively)
     /// This method skips folder markers (objects ending with '/') as they are zero-byte placeholders
     pub async fn calculate_folder_size(
@@ -402,6 +438,7 @@ impl S3Adapter {
             size,
         })
     }
+
 
     /// Upload an object
     pub async fn put_object(
@@ -740,6 +777,178 @@ impl S3Adapter {
             .send()
             .await
             .map_err(|e| AppError::S3Error(format!("Failed to abort multipart upload: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get object tagging
+    pub async fn get_object_tagging(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Result<Vec<ObjectTag>, AppError> {
+        let output = self
+            .client
+            .get_object_tagging()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to get object tags: {}", e)))?;
+
+        let tags = output
+            .tag_set()
+            .iter()
+            .map(|tag| ObjectTag {
+                key: tag.key().to_string(),
+                value: tag.value().to_string(),
+            })
+            .collect();
+
+        Ok(tags)
+    }
+
+    /// Put object tagging
+    pub async fn put_object_tagging(
+        &self,
+        bucket: &str,
+        key: &str,
+        tags: Vec<ObjectTag>,
+    ) -> Result<(), AppError> {
+        use aws_sdk_s3::types::{Tag, Tagging};
+
+        let s3_tags: Vec<Tag> = tags
+            .iter()
+            .map(|tag| {
+                Tag::builder()
+                    .key(&tag.key)
+                    .value(&tag.value)
+                    .build()
+                    .expect("Failed to build tag")
+            })
+            .collect();
+
+        let tagging = Tagging::builder()
+            .set_tag_set(Some(s3_tags))
+            .build()
+            .expect("Failed to build tagging");
+
+        self.client
+            .put_object_tagging()
+            .bucket(bucket)
+            .key(key)
+            .tagging(tagging)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to put object tags: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Delete object tagging
+    pub async fn delete_object_tagging(&self, bucket: &str, key: &str) -> Result<(), AppError> {
+        self.client
+            .delete_object_tagging()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to delete object tags: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get object metadata (HTTP headers)
+    pub async fn get_object_metadata(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Result<GetObjectMetadataResponse, AppError> {
+        use std::collections::HashMap;
+
+        let output = self
+            .client
+            .head_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to get object metadata: {}", e)))?;
+
+        // Extract custom metadata (x-amz-meta-* headers)
+        let metadata: HashMap<String, String> = output
+            .metadata()
+            .map(|m| m.clone())
+            .unwrap_or_default();
+
+        Ok(GetObjectMetadataResponse {
+            content_type: output.content_type().map(|s| s.to_string()),
+            content_encoding: output.content_encoding().map(|s| s.to_string()),
+            content_language: output.content_language().map(|s| s.to_string()),
+            content_disposition: output.content_disposition().map(|s| s.to_string()),
+            cache_control: output.cache_control().map(|s| s.to_string()),
+            expires: output.expires_string().map(|s| s.to_string()),
+            metadata,
+        })
+    }
+
+    /// Update object metadata (HTTP headers) by copying the object to itself
+    pub async fn update_object_metadata(
+        &self,
+        bucket: &str,
+        key: &str,
+        content_type: Option<String>,
+        content_encoding: Option<String>,
+        content_language: Option<String>,
+        content_disposition: Option<String>,
+        cache_control: Option<String>,
+        expires: Option<String>,
+        metadata: std::collections::HashMap<String, String>,
+    ) -> Result<(), AppError> {
+        use aws_sdk_s3::primitives::DateTime;
+
+        let copy_source = format!("{}/{}", bucket, key);
+
+        let mut request = self
+            .client
+            .copy_object()
+            .bucket(bucket)
+            .key(key)
+            .copy_source(&copy_source)
+            .metadata_directive(aws_sdk_s3::types::MetadataDirective::Replace);
+
+        // Set standard headers
+        if let Some(ct) = content_type {
+            request = request.content_type(ct);
+        }
+        if let Some(ce) = content_encoding {
+            request = request.content_encoding(ce);
+        }
+        if let Some(cl) = content_language {
+            request = request.content_language(cl);
+        }
+        if let Some(cd) = content_disposition {
+            request = request.content_disposition(cd);
+        }
+        if let Some(cc) = cache_control {
+            request = request.cache_control(cc);
+        }
+        if let Some(exp) = expires {
+            // Try to parse the expires string as DateTime
+            if let Ok(dt) = DateTime::from_str(&exp, aws_sdk_s3::primitives::DateTimeFormat::HttpDate) {
+                request = request.expires(dt);
+            }
+        }
+
+        // Set custom metadata
+        for (k, v) in metadata {
+            request = request.metadata(k, v);
+        }
+
+        request
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to update object metadata: {}", e)))?;
 
         Ok(())
     }

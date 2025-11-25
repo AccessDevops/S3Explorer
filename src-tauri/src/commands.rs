@@ -146,6 +146,29 @@ pub async fn calculate_bucket_stats(
         .map_err(|e| e.to_string())
 }
 
+/// Estimate bucket statistics (fast - only first 1000 objects)
+/// Returns (size, count, is_estimate)
+#[tauri::command]
+pub async fn estimate_bucket_stats(
+    profile_id: String,
+    bucket_name: String,
+    state: State<'_, AppState>,
+) -> Result<(i64, i64, bool), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .estimate_bucket_stats(&bucket_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List objects in a bucket
 #[tauri::command]
 pub async fn list_objects(
@@ -756,4 +779,143 @@ async fn perform_upload(
 
         Ok(())
     }
+}
+
+/// Get object tags
+#[tauri::command]
+pub async fn get_object_tags(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<GetObjectTagsResponse, String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let tags = adapter
+        .get_object_tagging(&bucket, &key)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(GetObjectTagsResponse { tags })
+}
+
+/// Put object tags
+#[tauri::command]
+pub async fn put_object_tags(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    tags: Vec<ObjectTag>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .put_object_tagging(&bucket, &key, tags)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Delete object tags
+#[tauri::command]
+pub async fn delete_object_tags(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .delete_object_tagging(&bucket, &key)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Get object metadata (HTTP headers)
+#[tauri::command]
+pub async fn get_object_metadata(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<GetObjectMetadataResponse, String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .get_object_metadata(&bucket, &key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Update object metadata (HTTP headers)
+#[tauri::command]
+pub async fn update_object_metadata(
+    profile_id: String,
+    bucket: String,
+    key: String,
+    content_type: Option<String>,
+    content_encoding: Option<String>,
+    content_language: Option<String>,
+    content_disposition: Option<String>,
+    cache_control: Option<String>,
+    expires: Option<String>,
+    metadata: std::collections::HashMap<String, String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    adapter
+        .update_object_metadata(
+            &bucket,
+            &key,
+            content_type,
+            content_encoding,
+            content_language,
+            content_disposition,
+            cache_control,
+            expires,
+            metadata,
+        )
+        .await
+        .map_err(|e| e.to_string())
 }

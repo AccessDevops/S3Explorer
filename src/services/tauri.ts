@@ -7,6 +7,9 @@ import type {
   GetObjectResponse,
   PresignedUrlResponse,
   ListObjectVersionsResponse,
+  GetObjectTagsResponse,
+  ObjectTag,
+  GetObjectMetadataResponse,
 } from '../types'
 
 // Profile Management
@@ -44,6 +47,13 @@ export async function calculateBucketStats(
   bucketName: string
 ): Promise<[number, number]> {
   return await invoke('calculate_bucket_stats', { profileId, bucketName })
+}
+
+export async function estimateBucketStats(
+  profileId: string,
+  bucketName: string
+): Promise<[number, number, boolean]> {
+  return await invoke('estimate_bucket_stats', { profileId, bucketName })
 }
 
 // Object Operations
@@ -222,5 +232,77 @@ export async function uploadFile(
 export async function cancelUpload(uploadId: string): Promise<void> {
   return await invoke('cancel_upload', {
     uploadId,
+  })
+}
+
+// Tag Operations
+export async function getObjectTags(
+  profileId: string,
+  bucket: string,
+  key: string
+): Promise<GetObjectTagsResponse> {
+  return await invoke('get_object_tags', {
+    profileId,
+    bucket,
+    key,
+  })
+}
+
+export async function putObjectTags(
+  profileId: string,
+  bucket: string,
+  key: string,
+  tags: ObjectTag[]
+): Promise<void> {
+  return await invoke('put_object_tags', {
+    profileId,
+    bucket,
+    key,
+    tags,
+  })
+}
+
+export async function deleteObjectTags(
+  profileId: string,
+  bucket: string,
+  key: string
+): Promise<void> {
+  return await invoke('delete_object_tags', {
+    profileId,
+    bucket,
+    key,
+  })
+}
+
+// Metadata Operations (HTTP Headers)
+export async function getObjectMetadata(
+  profileId: string,
+  bucket: string,
+  key: string
+): Promise<GetObjectMetadataResponse> {
+  return await invoke('get_object_metadata', {
+    profileId,
+    bucket,
+    key,
+  })
+}
+
+export async function updateObjectMetadata(
+  profileId: string,
+  bucket: string,
+  key: string,
+  metadata: GetObjectMetadataResponse
+): Promise<void> {
+  return await invoke('update_object_metadata', {
+    profileId,
+    bucket,
+    key,
+    contentType: metadata.content_type,
+    contentEncoding: metadata.content_encoding,
+    contentLanguage: metadata.content_language,
+    contentDisposition: metadata.content_disposition,
+    cacheControl: metadata.cache_control,
+    expires: metadata.expires,
+    metadata: metadata.metadata,
   })
 }

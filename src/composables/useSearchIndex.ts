@@ -29,6 +29,12 @@ const DB_NAME = 's3browser-search-index'
 const DB_VERSION = 1
 const STORE_NAME = 'indexes'
 
+/**
+ * Optimal batch size for index building (S3 maximum)
+ * Always use 1000 for indexing to minimize number of requests
+ */
+const INDEX_BATCH_SIZE = 1000
+
 let dbInstance: IDBDatabase | null = null
 
 async function openDB(): Promise<IDBDatabase> {
@@ -216,11 +222,12 @@ export function useSearchIndex() {
 
   /**
    * Build index using Web Worker (optimal for large buckets)
+   * Always uses INDEX_BATCH_SIZE (1000) for optimal S3 performance
    */
   async function buildIndexWithWorker(
     profileId: string,
     bucketName: string,
-    batchSize: number = 1000,
+    batchSize: number = INDEX_BATCH_SIZE,
     onProgress?: (current: number, total: number) => void
   ): Promise<SearchIndex> {
     // eslint-disable-next-line no-async-promise-executor
@@ -342,11 +349,12 @@ export function useSearchIndex() {
   /**
    * Build search index for a bucket
    * Uses Web Worker for optimal performance with large buckets
+   * Always uses INDEX_BATCH_SIZE (1000) for optimal S3 performance
    */
   async function buildIndex(
     profileId: string,
     bucketName: string,
-    batchSize: number = 1000,
+    batchSize: number = INDEX_BATCH_SIZE,
     onProgress?: (current: number, total: number) => void
   ): Promise<SearchIndex> {
     isBuilding.value = true
@@ -414,11 +422,12 @@ export function useSearchIndex() {
 
   /**
    * Rebuild index (delete + build)
+   * Always uses INDEX_BATCH_SIZE (1000) for optimal S3 performance
    */
   async function rebuildIndex(
     profileId: string,
     bucketName: string,
-    batchSize: number = 1000,
+    batchSize: number = INDEX_BATCH_SIZE,
     onProgress?: (current: number, total: number) => void
   ): Promise<SearchIndex> {
     await deleteIndex(profileId, bucketName)

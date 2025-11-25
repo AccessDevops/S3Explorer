@@ -6,7 +6,7 @@ pub struct Profile {
     pub id: String,
     pub name: String,
     pub endpoint: Option<String>, // Custom endpoint URL (None = use AWS default)
-    pub region: String,
+    pub region: Option<String>,   // Region (None = use default "us-east-1")
     pub access_key: String,
     pub secret_key: String,
     pub session_token: Option<String>,
@@ -203,4 +203,73 @@ pub enum UploadStatus {
     Completed,
     Failed,
     Cancelled,
+}
+
+/// S3 Object Tag
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectTag {
+    pub key: String,
+    pub value: String,
+}
+
+/// Request to get object tags
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct GetObjectTagsRequest {
+    pub profile_id: String,
+    pub bucket: String,
+    pub key: String,
+}
+
+/// Response from getting object tags
+#[derive(Debug, Serialize)]
+pub struct GetObjectTagsResponse {
+    pub tags: Vec<ObjectTag>,
+}
+
+/// Request to put object tags
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct PutObjectTagsRequest {
+    pub profile_id: String,
+    pub bucket: String,
+    pub key: String,
+    pub tags: Vec<ObjectTag>,
+}
+
+/// Request to delete object tags
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct DeleteObjectTagsRequest {
+    pub profile_id: String,
+    pub bucket: String,
+    pub key: String,
+}
+
+/// Response from getting object metadata (HTTP headers)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetObjectMetadataResponse {
+    pub content_type: Option<String>,
+    pub content_encoding: Option<String>,
+    pub content_language: Option<String>,
+    pub content_disposition: Option<String>,
+    pub cache_control: Option<String>,
+    pub expires: Option<String>,
+    pub metadata: std::collections::HashMap<String, String>, // Custom x-amz-meta-* headers
+}
+
+/// Request to update object metadata
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct UpdateObjectMetadataRequest {
+    pub profile_id: String,
+    pub bucket: String,
+    pub key: String,
+    pub content_type: Option<String>,
+    pub content_encoding: Option<String>,
+    pub content_language: Option<String>,
+    pub content_disposition: Option<String>,
+    pub cache_control: Option<String>,
+    pub expires: Option<String>,
+    pub metadata: std::collections::HashMap<String, String>,
 }

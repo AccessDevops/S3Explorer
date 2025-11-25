@@ -1,19 +1,50 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 export type Language = 'en' | 'zh' | 'hi' | 'es' | 'fr' | 'ar' | 'bn' | 'pt' | 'id' | 'ro'
 export type SearchMode = 'local' | 'global'
 export type ViewMode = 'normal' | 'compact'
+export type EditorTheme = 'dark' | 'light' | 'high-contrast' | 'system'
+export type MonacoTheme = 'vs-dark' | 'vs' | 'hc-black'
 
 export const useSettingsStore = defineStore('settings', () => {
   const language = ref<Language>('en')
+
+  // Batch size for object navigation (smaller = faster UI response, less data per request)
+  // Note: Index building always uses 1000 (S3 maximum) for optimal performance
   const batchSize = ref(250)
+
   const searchMode = ref<SearchMode>('local')
   const viewMode = ref<ViewMode>('normal')
   const maxConcurrentUploads = ref(10)
-  const multipartThresholdMB = ref(50) // MB - files larger than this use multipart upload
+  const multipartThresholdMB = ref(20) // MB - files larger than this use multipart upload
   const indexValidityHours = ref(8) // hours - index older than this is considered expired
   const indexAutoBuildThreshold = ref(12000) // objects - buckets with fewer objects auto-build index
+  const bucketStatsCacheTTLHours = ref(24) // hours - bucket stats cache TTL (default: 24h)
+  const previewWarningLimitMB = ref(10) // MB - files larger than this show warning before loading
+  const previewMaxLimitMB = ref(80) // MB - files larger than this cannot be previewed
+  const editorTheme = ref<EditorTheme>('system') // editor theme - dark, light, high-contrast, or system
+
+  // Track system theme preference reactively
+  const systemPrefersDark = ref(false)
+
+  // Initialize system theme detection
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    systemPrefersDark.value = mediaQuery.matches
+
+    // Listen for system theme changes
+    const updateSystemTheme = (e: MediaQueryListEvent) => {
+      systemPrefersDark.value = e.matches
+    }
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', updateSystemTheme)
+    } else {
+      // Fallback for older browsers
+      mediaQuery.addListener(updateSystemTheme)
+    }
+  }
 
   // Load settings from localStorage on init
   const loadSettings = () => {
@@ -71,6 +102,35 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!isNaN(threshold) && threshold >= 100 && threshold <= 100000) {
         indexAutoBuildThreshold.value = threshold
       }
+    }
+
+    const savedBucketStatsCacheTTL = localStorage.getItem('app-bucketStatsCacheTTLHours')
+    if (savedBucketStatsCacheTTL) {
+      const hours = parseInt(savedBucketStatsCacheTTL, 10)
+      if (!isNaN(hours) && hours >= 1 && hours <= 168) {
+        bucketStatsCacheTTLHours.value = hours
+      }
+    }
+
+    const savedPreviewWarningLimit = localStorage.getItem('app-previewWarningLimitMB')
+    if (savedPreviewWarningLimit) {
+      const limit = parseInt(savedPreviewWarningLimit, 10)
+      if (!isNaN(limit) && limit >= 10 && limit <= 500) {
+        previewWarningLimitMB.value = limit
+      }
+    }
+
+    const savedPreviewMaxLimit = localStorage.getItem('app-previewMaxLimitMB')
+    if (savedPreviewMaxLimit) {
+      const limit = parseInt(savedPreviewMaxLimit, 10)
+      if (!isNaN(limit) && limit >= 100 && limit <= 5000) {
+        previewMaxLimitMB.value = limit
+      }
+    }
+
+    const savedEditorTheme = localStorage.getItem('app-editorTheme') as EditorTheme | null
+    if (savedEditorTheme === 'dark' || savedEditorTheme === 'light' || savedEditorTheme === 'high-contrast' || savedEditorTheme === 'system') {
+      editorTheme.value = savedEditorTheme
     }
   }
 
@@ -138,6 +198,54 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-indexAutoBuildThreshold', String(threshold))
   }
 
+  // Save bucket stats cache TTL to localStorage
+  const setBucketStatsCacheTTLHours = (hours: number) => {
+    if (hours < 1 || hours > 168) {
+      throw new Error('Bucket stats cache TTL must be between 1 and 168 hours (1 week)')
+    }
+    bucketStatsCacheTTLHours.value = hours
+    localStorage.setItem('app-bucketStatsCacheTTLHours', String(hours))
+  }
+
+  // Save preview warning limit to localStorage
+  const setPreviewWarningLimitMB = (limit: number) => {
+    if (limit < 10 || limit > 500) {
+      throw new Error('Preview warning limit must be between 10 and 500 MB')
+    }
+    previewWarningLimitMB.value = limit
+    localStorage.setItem('app-previewWarningLimitMB', String(limit))
+  }
+
+  // Save preview max limit to localStorage
+  const setPreviewMaxLimitMB = (limit: number) => {
+    if (limit < 100 || limit > 5000) {
+      throw new Error('Preview max limit must be between 100 and 5000 MB')
+    }
+    previewMaxLimitMB.value = limit
+    localStorage.setItem('app-previewMaxLimitMB', String(limit))
+  }
+
+  // Save editor theme to localStorage
+  const setEditorTheme = (theme: EditorTheme) => {
+    editorTheme.value = theme
+    localStorage.setItem('app-editorTheme', theme)
+  }
+
+  // Computed property to get Monaco theme based on editor theme setting
+  // This reactively detects system theme when 'system' is selected
+  const getMonacoTheme = computed<MonacoTheme>(() => {
+    if (editorTheme.value === 'dark') {
+      return 'vs-dark'
+    } else if (editorTheme.value === 'light') {
+      return 'vs'
+    } else if (editorTheme.value === 'high-contrast') {
+      return 'hc-black'
+    } else {
+      // system - use reactive system preference
+      return systemPrefersDark.value ? 'vs-dark' : 'vs'
+    }
+  })
+
   return {
     language,
     batchSize,
@@ -147,6 +255,10 @@ export const useSettingsStore = defineStore('settings', () => {
     multipartThresholdMB,
     indexValidityHours,
     indexAutoBuildThreshold,
+    bucketStatsCacheTTLHours,
+    previewWarningLimitMB,
+    previewMaxLimitMB,
+    editorTheme,
     loadSettings,
     setLanguage,
     setBatchSize,
@@ -156,5 +268,10 @@ export const useSettingsStore = defineStore('settings', () => {
     setMultipartThresholdMB,
     setIndexValidityHours,
     setIndexAutoBuildThreshold,
+    setBucketStatsCacheTTLHours,
+    setPreviewWarningLimitMB,
+    setPreviewMaxLimitMB,
+    setEditorTheme,
+    getMonacoTheme,
   }
 })

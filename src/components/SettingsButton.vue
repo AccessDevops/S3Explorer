@@ -158,6 +158,88 @@
                 </button>
               </div>
             </div>
+
+            <!-- Editor Theme Setting -->
+            <div class="space-y-3">
+              <div>
+                <label class="text-sm font-medium">{{ t('editorTheme') }}</label>
+                <p class="text-sm text-muted-foreground">{{ t('editorThemeDescription') }}</p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 max-w-2xl">
+                <button
+                  @click="changeEditorTheme('dark')"
+                  :class="[
+                    'p-3 rounded-lg border-2 transition-all text-left',
+                    settingsStore.editorTheme === 'dark'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50',
+                  ]"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="text-xl">🌙</div>
+                    <div class="min-w-0">
+                      <div class="font-medium text-sm">{{ t('themeDark') }}</div>
+                      <div class="text-xs text-muted-foreground">{{ t('themeDarkDesc') }}</div>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  @click="changeEditorTheme('light')"
+                  :class="[
+                    'p-3 rounded-lg border-2 transition-all text-left',
+                    settingsStore.editorTheme === 'light'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50',
+                  ]"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="text-xl">☀️</div>
+                    <div class="min-w-0">
+                      <div class="font-medium text-sm">{{ t('themeLight') }}</div>
+                      <div class="text-xs text-muted-foreground">{{ t('themeLightDesc') }}</div>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  @click="changeEditorTheme('system')"
+                  :class="[
+                    'p-3 rounded-lg border-2 transition-all text-left',
+                    settingsStore.editorTheme === 'system'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50',
+                  ]"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="text-xl">⚙️</div>
+                    <div class="min-w-0">
+                      <div class="font-medium text-sm">{{ t('themeSystem') }}</div>
+                      <div class="text-xs text-muted-foreground">{{ t('themeSystemDesc') }}</div>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  @click="changeEditorTheme('high-contrast')"
+                  :class="[
+                    'p-3 rounded-lg border-2 transition-all text-left',
+                    settingsStore.editorTheme === 'high-contrast'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50',
+                  ]"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="text-xl">🔲</div>
+                    <div class="min-w-0">
+                      <div class="font-medium text-sm">{{ t('themeHighContrast') }}</div>
+                      <div class="text-xs text-muted-foreground">{{ t('themeHighContrastDesc') }}</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- PERFORMANCE TAB -->
@@ -211,6 +293,48 @@
                   @update:model-value="(val) => settingsStore.setMultipartThresholdMB(Number(val))"
                   min="5"
                   max="1000"
+                  class="flex-1"
+                />
+                <span class="text-sm text-muted-foreground">MB</span>
+              </div>
+            </div>
+
+            <!-- Preview Warning Limit Setting -->
+            <div class="space-y-3">
+              <div>
+                <label class="text-sm font-medium">{{ t('previewWarningLimit') }}</label>
+                <p class="text-sm text-muted-foreground">{{
+                  t('previewWarningLimitDescription')
+                }}</p>
+              </div>
+              <div class="flex items-center gap-2 max-w-xs">
+                <Input
+                  type="number"
+                  :model-value="settingsStore.previewWarningLimitMB"
+                  @update:model-value="(val) => settingsStore.setPreviewWarningLimitMB(Number(val))"
+                  min="10"
+                  max="500"
+                  class="flex-1"
+                />
+                <span class="text-sm text-muted-foreground">MB</span>
+              </div>
+            </div>
+
+            <!-- Preview Max Limit Setting -->
+            <div class="space-y-3">
+              <div>
+                <label class="text-sm font-medium">{{ t('previewMaxLimit') }}</label>
+                <p class="text-sm text-muted-foreground">{{
+                  t('previewMaxLimitDescription')
+                }}</p>
+              </div>
+              <div class="flex items-center gap-2 max-w-xs">
+                <Input
+                  type="number"
+                  :model-value="settingsStore.previewMaxLimitMB"
+                  @update:model-value="(val) => settingsStore.setPreviewMaxLimitMB(Number(val))"
+                  min="100"
+                  max="5000"
                   class="flex-1"
                 />
                 <span class="text-sm text-muted-foreground">MB</span>
@@ -354,7 +478,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Language, ViewMode } from '../stores/settings'
+import type { Language, ViewMode, EditorTheme } from '../stores/settings'
 
 const settingsStore = useSettingsStore()
 const appStore = useAppStore()
@@ -390,6 +514,10 @@ function changeLanguage(lang: Language) {
 
 function changeViewMode(mode: ViewMode) {
   settingsStore.setViewMode(mode)
+}
+
+function changeEditorTheme(theme: EditorTheme) {
+  settingsStore.setEditorTheme(theme)
 }
 
 // Search Index Management - All indexes table

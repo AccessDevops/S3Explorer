@@ -5,6 +5,7 @@
 export interface ValidationResult {
   valid: boolean
   error?: string
+  warning?: string
 }
 
 /**
@@ -119,12 +120,16 @@ export function validateEndpoint(endpoint: string): ValidationResult {
 
 /**
  * Validate region name
- * - Cannot be empty
- * - Must match AWS region format
+ * - Region is optional (some S3-compatible providers don't require it)
+ * - If provided but doesn't match AWS format, shows a warning (not blocking)
  */
 export function validateRegion(region: string): ValidationResult {
+  // Empty region is valid (will use default "us-east-1")
   if (!region || region.trim().length === 0) {
-    return { valid: false, error: 'Region cannot be empty' }
+    return {
+      valid: true,
+      warning: 'Region is optional. Default "us-east-1" will be used if empty.'
+    }
   }
 
   const trimmedRegion = region.trim()
@@ -133,8 +138,8 @@ export function validateRegion(region: string): ValidationResult {
   const regionRegex = /^[a-z]{2}-[a-z]+-\d+$/
   if (!regionRegex.test(trimmedRegion)) {
     return {
-      valid: false,
-      error: 'Region must match AWS format (e.g., us-east-1, eu-west-2)',
+      valid: true,
+      warning: 'Non-standard region format. Standard AWS format is like "us-east-1" or "eu-west-2". This may work for S3-compatible providers like MinIO.',
     }
   }
 

@@ -1,15 +1,46 @@
 <template>
   <div class="p-4 border-b border-white/10">
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-semibold">{{ t('connections') }}</h3>
-      <Button size="sm" @click="openAddModal">
-        <span class="mr-1">+</span> {{ t('add') }}
-      </Button>
+      <h3 class="text-lg font-semibold mr-2">{{ t('connections') }}</h3>
+      <div class="flex items-center gap-3">
+        <!-- Search bar for filtering profiles -->
+        <div class="relative">
+          <Input
+            v-model="profileSearchQuery"
+            :placeholder="t('searchProfiles')"
+            class="h-7 w-24 pr-7 text-sm border-0 bg-white/5 focus:bg-white/10 focus:ring-1 focus:ring-primary/50"
+          />
+          <button
+            v-if="profileSearchQuery"
+            @click="profileSearchQuery = ''"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            :title="t('clear')"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <Button size="sm" @click="openAddModal">
+          <span class="mr-1">+</span> {{ t('add') }}
+        </Button>
+      </div>
     </div>
 
     <div class="flex flex-col gap-2">
       <div
-        v-for="profile in appStore.profiles"
+        v-for="profile in filteredProfiles"
         :key="profile.id"
         class="flex justify-between items-center p-3 rounded-md cursor-pointer transition-colors group"
         :class="
@@ -99,24 +130,29 @@
             <Input
               v-model="formData.endpoint"
               :placeholder="t('endpointPlaceholder')"
-              :class="validationErrors.endpoint ? 'border-red-500' : ''"
+              :class="validationErrors.endpoint ? 'border-red-500' : validationWarnings.endpoint ? 'border-amber-500' : ''"
             />
             <p v-if="validationErrors.endpoint" class="text-xs text-red-600">
               {{ validationErrors.endpoint }}
+            </p>
+            <p v-else-if="validationWarnings.endpoint" class="text-xs text-amber-600">
+              ⚠ {{ validationWarnings.endpoint }}
             </p>
             <p v-else class="text-xs text-muted-foreground">{{ t('endpointDescription') }}</p>
           </div>
 
           <div class="space-y-2">
-            <label class="text-sm font-medium">{{ t('region') }} *</label>
+            <label class="text-sm font-medium">{{ t('region') }} (optional)</label>
             <Input
               v-model="formData.region"
-              required
               placeholder="us-east-1"
-              :class="validationErrors.region ? 'border-red-500' : ''"
+              :class="validationErrors.region ? 'border-red-500' : validationWarnings.region ? 'border-amber-500' : ''"
             />
             <p v-if="validationErrors.region" class="text-xs text-red-600">
               {{ validationErrors.region }}
+            </p>
+            <p v-else-if="validationWarnings.region" class="text-xs text-amber-600">
+              ⚠ {{ validationWarnings.region }}
             </p>
           </div>
 
@@ -263,6 +299,21 @@ const editingProfile = ref<Profile | null>(null)
 const testResult = ref<TestConnectionResponse | null>(null)
 const isTesting = ref(false)
 
+// Search query for filtering profiles
+const profileSearchQuery = ref('')
+
+// Filtered profiles based on search query
+const filteredProfiles = computed(() => {
+  if (!profileSearchQuery.value.trim()) {
+    return appStore.profiles
+  }
+
+  const query = profileSearchQuery.value.toLowerCase()
+  return appStore.profiles.filter(profile =>
+    profile.name.toLowerCase().includes(query)
+  )
+})
+
 const formData = reactive({
   name: '',
   endpoint: '',
@@ -274,8 +325,13 @@ const formData = reactive({
   use_tls: true,
 })
 
-// Validation errors
+// Validation errors and warnings
 const validationErrors = reactive({
+  endpoint: '',
+  region: '',
+})
+
+const validationWarnings = reactive({
   endpoint: '',
   region: '',
 })
@@ -285,7 +341,8 @@ watch(
   () => formData.endpoint,
   (value) => {
     const result = validateEndpoint(value)
-    validationErrors.endpoint = result.valid ? '' : result.error || ''
+    validationErrors.endpoint = result.error || ''
+    validationWarnings.endpoint = result.warning || ''
   }
 )
 
@@ -294,7 +351,8 @@ watch(
   () => formData.region,
   (value) => {
     const result = validateRegion(value)
-    validationErrors.region = result.valid ? '' : result.error || ''
+    validationErrors.region = result.error || ''
+    validationWarnings.region = result.warning || ''
   }
 )
 
@@ -306,11 +364,10 @@ watch(showAddModal, (isOpen) => {
   }
 })
 
-// Check if form is valid
+// Check if form is valid (warnings don't block submission)
 const isFormValid = computed(() => {
   return (
     formData.name.trim() !== '' &&
-    formData.region.trim() !== '' &&
     formData.access_key.trim() !== '' &&
     formData.secret_key.trim() !== '' &&
     validationErrors.endpoint === '' &&
@@ -321,7 +378,7 @@ const isFormValid = computed(() => {
 function resetForm() {
   formData.name = ''
   formData.endpoint = ''
-  formData.region = 'us-east-1'
+  formData.region = ''
   formData.access_key = ''
   formData.secret_key = ''
   formData.session_token = ''
@@ -329,6 +386,8 @@ function resetForm() {
   formData.use_tls = true
   validationErrors.endpoint = ''
   validationErrors.region = ''
+  validationWarnings.endpoint = ''
+  validationWarnings.region = ''
   testResult.value = null
   editingProfile.value = null
 }
@@ -348,7 +407,7 @@ async function saveProfile() {
     id: editingProfile.value?.id || uuidv4(),
     name: formData.name,
     endpoint: formData.endpoint || undefined,
-    region: formData.region,
+    region: formData.region || undefined,
     access_key: formData.access_key,
     secret_key: formData.secret_key,
     session_token: formData.session_token || undefined,
@@ -370,7 +429,7 @@ async function testConnectionHandler() {
     id: 'test',
     name: formData.name,
     endpoint: formData.endpoint || undefined,
-    region: formData.region,
+    region: formData.region || undefined,
     access_key: formData.access_key,
     secret_key: formData.secret_key,
     session_token: formData.session_token || undefined,
@@ -401,7 +460,7 @@ function editProfileHandler(profile: Profile) {
   editingProfile.value = profile
   formData.name = profile.name
   formData.endpoint = profile.endpoint || ''
-  formData.region = profile.region
+  formData.region = profile.region || ''
   formData.access_key = profile.access_key
   formData.secret_key = profile.secret_key
   formData.session_token = profile.session_token || ''

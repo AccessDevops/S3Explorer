@@ -31,11 +31,16 @@ export function formatDate(dateString?: string): string {
 
 /**
  * Format time duration in seconds to human-readable format
- * Examples: "45s", "2m 30s", "1h 15m"
+ * Examples: "250ms", "45s", "2m 30s", "1h 15m"
  */
 export function formatTime(seconds: number): string {
-  if (seconds < 1) return '< 1s'
   if (!isFinite(seconds)) return '-'
+
+  // Handle milliseconds for sub-second durations
+  if (seconds < 1) {
+    const ms = Math.round(seconds * 1000)
+    return `${ms}ms`
+  }
 
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)

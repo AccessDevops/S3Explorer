@@ -1,26 +1,57 @@
 <template>
   <div class="p-4">
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-semibold">{{ t('buckets') }}</h3>
-      <div class="flex gap-1">
-        <Button
-          size="icon"
-          variant="ghost"
-          @click="showCreateBucketModal = true"
-          :title="t('createBucket')"
-          class="h-8 w-8"
-        >
-          +
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          @click="refreshBuckets()"
-          :title="t('refresh')"
-          class="h-8 w-8"
-        >
-          ⟳
-        </Button>
+      <h3 class="text-lg font-semibold mr-2">{{ t('buckets') }}</h3>
+      <div class="flex items-center gap-3">
+        <!-- Search bar for filtering buckets -->
+        <div class="relative">
+          <Input
+            v-model="bucketSearchQuery"
+            :placeholder="t('searchBuckets')"
+            class="h-7 w-32 pr-7 text-sm border-0 bg-white/5 focus:bg-white/10 focus:ring-1 focus:ring-primary/50"
+          />
+          <button
+            v-if="bucketSearchQuery"
+            @click="bucketSearchQuery = ''"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            :title="t('clear')"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="flex gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            @click="showCreateBucketModal = true"
+            :title="t('createBucket')"
+            class="h-8 w-8"
+          >
+            +
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            @click="refreshBuckets()"
+            :title="t('refresh')"
+            class="h-8 w-8"
+          >
+            ⟳
+          </Button>
+        </div>
       </div>
     </div>
 
@@ -30,7 +61,7 @@
 
     <div v-else class="flex flex-col gap-2">
       <div
-        v-for="bucket in appStore.buckets"
+        v-for="bucket in filteredBuckets"
         :key="bucket.name"
         class="flex items-center gap-2 p-3 rounded-md cursor-pointer transition-colors"
         :class="
@@ -40,30 +71,99 @@
       >
         <span class="text-lg">🗄️</span>
         <div class="flex-1 truncate">
-          <div class="truncate">{{ bucket.name }}</div>
+          <div class="flex items-center gap-2">
+            <div class="truncate flex-1">{{ bucket.name }}</div>
+            <!-- ACL Lock Icon -->
+            <div
+              v-if="bucketAcls[bucket.name]"
+              class="flex-shrink-0"
+              :title="bucketAcls[bucket.name] === 'Public' ? t('bucketPublic') : t('bucketPrivate')"
+            >
+              <svg
+                v-if="bucketAcls[bucket.name] === 'Public'"
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-yellow-500"
+              >
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+              </svg>
+              <svg
+                v-else
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-green-500"
+              >
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Stats display (if available) -->
           <div v-if="bucketStats[bucket.name]" class="text-xs text-muted-foreground/70 mt-0.5">
             {{ formatSize(bucketStats[bucket.name].size) }} ·
             {{ bucketStats[bucket.name].count }} object{{
               bucketStats[bucket.name].count !== 1 ? 's' : ''
             }}
+            <span v-if="bucketStatsIsEstimate[bucket.name]" class="text-yellow-400 ml-1" title="Estimate based on first 1000 objects">
+              (~)
+            </span>
+            <button
+              @click.stop="loadBucketStats(bucket.name, true)"
+              class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
+              :title="t('refresh')"
+            >
+              ⟳
+            </button>
           </div>
+
+          <!-- Loading state -->
           <div
             v-else-if="loadingStats[bucket.name]"
             class="text-xs text-muted-foreground/50 mt-0.5"
           >
-            {{ t('loading') }}
+            {{ t('loading') }}{{ statsProgress[bucket.name] ? ` (${statsProgress[bucket.name]} pages)` : '...' }}
           </div>
-          <div class="text-xs text-muted-foreground/60 mt-0.5 flex items-center gap-2">
+
+          <!-- Manual calculate buttons (if stats not available) -->
+          <div
+            v-else
+            class="text-xs mt-0.5 flex items-center gap-2"
+          >
+            <button
+              @click.stop="loadQuickEstimate(bucket.name)"
+              class="text-yellow-400 hover:text-yellow-300 transition-colors"
+              :title="t('quickEstimate')"
+            >
+              ⚡ {{ t('estimate') }}
+            </button>
+            <span class="text-muted-foreground/30">·</span>
+            <button
+              @click.stop="loadBucketStats(bucket.name, false)"
+              class="text-blue-400 hover:text-blue-300 transition-colors"
+              :title="t('fullCalculation')"
+            >
+              ⟳ {{ t('calculate') }}
+            </button>
+          </div>
+
+          <div class="text-xs text-muted-foreground/60 mt-0.5">
             <span v-if="bucket.creation_date">{{ formatDate(bucket.creation_date) }}</span>
-            <span v-if="bucketAcls[bucket.name]" class="inline-flex items-center gap-1">
-              <span v-if="bucket.creation_date">·</span>
-              <span
-                :class="bucketAcls[bucket.name] === 'Public' ? 'text-yellow-500' : 'text-green-500'"
-              >
-                {{ bucketAcls[bucket.name] === 'Public' ? '🔓' : '🔒' }}
-                {{ bucketAcls[bucket.name] }}
-              </span>
-            </span>
           </div>
         </div>
       </div>
@@ -138,8 +238,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAppStore } from '../stores/app'
+import { useSettingsStore } from '../stores/settings'
 import { useI18n } from '../composables/useI18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -150,36 +251,45 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { createBucket, getBucketAcl, calculateBucketStats } from '../services/tauri'
+import { createBucket, getBucketAcl, estimateBucketStats } from '../services/tauri'
 import { formatSize, formatDate } from '../utils/formatters'
 import { logger } from '../utils/logger'
-import { useBucketStatsInvalidation } from '../composables/useBucketStatsInvalidation'
+import { useBucketStats } from '../composables/useBucketStats'
 
 const appStore = useAppStore()
+const settingsStore = useSettingsStore()
 const { t } = useI18n()
-const { getInvalidationTimestamp, clearInvalidation } = useBucketStatsInvalidation()
+const bucketStatsComposable = useBucketStats()
 
-interface BucketStats {
-  size: number
-  count: number
-}
+// Search query for filtering buckets
+const bucketSearchQuery = ref('')
 
-interface CachedStats {
-  stats: BucketStats
-  timestamp: number
-}
+// Filtered buckets based on search query
+const filteredBuckets = computed(() => {
+  if (!bucketSearchQuery.value.trim()) {
+    return appStore.buckets
+  }
+
+  const query = bucketSearchQuery.value.toLowerCase()
+  return appStore.buckets.filter(bucket =>
+    bucket.name.toLowerCase().includes(query)
+  )
+})
+
+// Import BucketStats type from composable
+import type { BucketStats } from '../composables/useBucketStats'
 
 const bucketStats = ref<Record<string, BucketStats>>({})
-const loadingStats = ref<Record<string, boolean>>({})
+const bucketStatsIsEstimate = ref<Record<string, boolean>>({}) // Track which stats are estimates
+const { loadingStats, statsProgress } = bucketStatsComposable
 const bucketAcls = ref<Record<string, string>>({})
-const statsCache = ref<Record<string, CachedStats>>({})
 const showCreateBucketModal = ref(false)
 const newBucketName = ref('')
 const creating = ref(false)
 const createError = ref<string | null>(null)
 
-// Cache TTL: 30 seconds
-const STATS_CACHE_TTL = 30000
+// Cache TTL: configurable via settings (default: 24 hours)
+const statsCacheTTL = computed(() => settingsStore.bucketStatsCacheTTLHours * 60 * 60 * 1000)
 
 async function selectBucket(bucketName: string) {
   appStore.selectBucket(bucketName)
@@ -188,7 +298,12 @@ async function selectBucket(bucketName: string) {
 
 async function refreshBuckets() {
   await appStore.loadBuckets()
-  await loadAllBucketStats(true) // Force refresh when explicitly refreshing
+  // Don't auto-refresh stats anymore (lazy loading)
+
+  // Load ACLs for all buckets to display lock icons
+  for (const bucket of appStore.buckets) {
+    await loadBucketAcl(bucket.name)
+  }
 }
 
 async function createBucketHandler() {
@@ -204,7 +319,7 @@ async function createBucketHandler() {
     showCreateBucketModal.value = false
     newBucketName.value = ''
     await appStore.loadBuckets()
-    await loadAllBucketStats(true) // Force refresh after creating bucket
+    // Don't auto-refresh stats anymore (lazy loading)
   } catch (e: any) {
     // Handle permission errors and other errors
     if (e.toString().includes('AccessDenied') || e.toString().includes('permission')) {
@@ -221,58 +336,89 @@ async function createBucketHandler() {
   }
 }
 
-async function loadBucketStats(bucketName: string, forceRefresh = false) {
+/**
+ * Load quick estimate (fast - only first 1000 objects)
+ * Uses a single S3 request for instant preview
+ */
+async function loadQuickEstimate(bucketName: string) {
   if (!appStore.currentProfile) return
-
-  // Check if bucket was invalidated (upload/delete happened)
-  const invalidationTimestamp = getInvalidationTimestamp(bucketName)
-  const cached = statsCache.value[bucketName]
-  const now = Date.now()
-
-  // Force refresh if:
-  // 1. Explicitly requested (forceRefresh = true)
-  // 2. Bucket was invalidated after our cache timestamp
-  // 3. Cache expired (> STATS_CACHE_TTL)
-  const shouldRefresh =
-    forceRefresh ||
-    (cached && invalidationTimestamp > cached.timestamp) ||
-    !cached ||
-    now - (cached?.timestamp || 0) >= STATS_CACHE_TTL
-
-  if (!shouldRefresh) {
-    // Use cached stats
-    bucketStats.value[bucketName] = cached!.stats
-    return
-  }
 
   try {
     loadingStats.value[bucketName] = true
 
-    // Use the dedicated calculateBucketStats function that lists ALL objects without delimiter
-    const [totalSize, totalCount] = await calculateBucketStats(
+    const [size, count, isEstimate] = await estimateBucketStats(
       appStore.currentProfile.id,
       bucketName
     )
 
-    const stats = {
-      size: totalSize,
-      count: totalCount,
+    // Create stats object
+    const stats: BucketStats = {
+      profileId: appStore.currentProfile.id,
+      bucketName,
+      size,
+      count,
+      lastUpdated: Date.now(),
     }
 
     bucketStats.value[bucketName] = stats
+    bucketStatsIsEstimate.value[bucketName] = isEstimate
 
-    // Update cache
-    statsCache.value[bucketName] = {
-      stats,
-      timestamp: now,
+    // Cache the estimate for quick display later
+    if (!isEstimate) {
+      // If not an estimate (bucket has ≤ 1000 objects), save as accurate stats
+      await bucketStatsComposable.loadBucketStats(
+        appStore.currentProfile.id,
+        bucketName,
+        false,
+        statsCacheTTL.value
+      )
     }
-
-    // Clear invalidation flag after successful refresh
-    clearInvalidation(bucketName)
   } catch (e) {
-    logger.error(`Failed to load stats for bucket ${bucketName}`, e)
+    logger.error(`Failed to load estimate for bucket ${bucketName}`, e)
   } finally {
     loadingStats.value[bucketName] = false
+  }
+}
+
+/**
+ * Load bucket stats using IndexedDB cache with 24h TTL
+ * This replaces the old 30-second in-memory cache
+ */
+async function loadBucketStats(bucketName: string, forceRefresh = false) {
+  if (!appStore.currentProfile) return
+
+  try {
+    // First, try to load from cache (fast)
+    if (!forceRefresh) {
+      const cached = await bucketStatsComposable.getCachedStats(
+        appStore.currentProfile.id,
+        bucketName
+      )
+      if (cached) {
+        const age = Date.now() - cached.lastUpdated
+        if (age < statsCacheTTL.value) {
+          // Cache valid, use it
+          bucketStats.value[bucketName] = cached
+          bucketStatsIsEstimate.value[bucketName] = false // Cached stats are always accurate
+          return
+        }
+      }
+    }
+
+    // Cache miss or force refresh - load from S3
+    const stats = await bucketStatsComposable.loadBucketStats(
+      appStore.currentProfile.id,
+      bucketName,
+      forceRefresh,
+      statsCacheTTL.value
+    )
+
+    if (stats) {
+      bucketStats.value[bucketName] = stats
+      bucketStatsIsEstimate.value[bucketName] = false // Full calculation is always accurate
+    }
+  } catch (e) {
+    logger.error(`Failed to load stats for bucket ${bucketName}`, e)
   }
 }
 
@@ -288,85 +434,34 @@ async function loadBucketAcl(bucketName: string) {
   }
 }
 
-// Simple concurrency limiter to avoid overwhelming S3 API
-async function runWithConcurrencyLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number
-): Promise<T[]> {
-  const results: T[] = []
-  const executing: Promise<void>[] = []
-
-  for (const task of tasks) {
-    const promise = task().then((result) => {
-      results.push(result)
-      executing.splice(executing.indexOf(promise), 1)
-    })
-
-    executing.push(promise)
-
-    if (executing.length >= limit) {
-      await Promise.race(executing)
-    }
-  }
-
-  await Promise.all(executing)
-  return results
-}
-
-async function loadAllBucketStats(forceRefresh = false) {
+/**
+ * Load cached stats from IndexedDB on mount (fast, no S3 calls)
+ * This provides instant display of previously calculated stats
+ */
+async function loadCachedStatsOnMount() {
   if (!appStore.currentProfile) return
 
-  // Load stats and ACLs for all buckets with concurrency limit of 5
-  // This prevents overwhelming the S3 API with too many concurrent requests
-  const tasks = appStore.buckets.flatMap((bucket) => [
-    () => loadBucketStats(bucket.name, forceRefresh),
-    () => loadBucketAcl(bucket.name),
-  ])
-
-  await runWithConcurrencyLimit(tasks, 5)
-}
-
-// Watch for changes in buckets list
-watch(
-  () => appStore.buckets,
-  async (newBuckets) => {
-    if (newBuckets.length > 0) {
-      await loadAllBucketStats()
+  for (const bucket of appStore.buckets) {
+    const cached = await bucketStatsComposable.getCachedStats(
+      appStore.currentProfile.id,
+      bucket.name
+    )
+    if (cached) {
+      const age = Date.now() - cached.lastUpdated
+      if (age < statsCacheTTL.value) {
+        bucketStats.value[bucket.name] = cached
+      }
     }
   }
-)
+}
 
-// Watch for invalidations and refresh affected buckets automatically
-// Checks every 1 second for invalidated buckets
-let invalidationCheckInterval: number | null = null
-
-onMounted(() => {
-  invalidationCheckInterval = window.setInterval(() => {
-    if (!appStore.currentProfile) return
-
-    // Check each bucket for invalidation
-    appStore.buckets.forEach(async (bucket) => {
-      const invalidationTimestamp = getInvalidationTimestamp(bucket.name)
-      const cached = statsCache.value[bucket.name]
-
-      // Refresh if invalidated after our cache
-      if (cached && invalidationTimestamp > cached.timestamp) {
-        await loadBucketStats(bucket.name)
-      }
-    })
-  }, 1000) // Check every second
-})
-
-onUnmounted(() => {
-  if (invalidationCheckInterval !== null) {
-    clearInterval(invalidationCheckInterval)
-  }
-})
-
-// Load stats on mount if buckets are already loaded
+// Load cached stats and ACLs when component mounts
 onMounted(async () => {
-  if (appStore.buckets.length > 0) {
-    await loadAllBucketStats()
+  await loadCachedStatsOnMount()
+
+  // Load ACLs for all buckets to display lock icons
+  for (const bucket of appStore.buckets) {
+    await loadBucketAcl(bucket.name)
   }
 })
 

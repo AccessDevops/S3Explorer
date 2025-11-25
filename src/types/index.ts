@@ -3,7 +3,7 @@ export interface Profile {
   id: string
   name: string
   endpoint?: string
-  region: string
+  region?: string
   access_key: string
   secret_key: string
   session_token?: string
@@ -104,6 +104,28 @@ export interface UploadProgressEvent {
   percentage: number
   status: 'pending' | 'starting' | 'uploading' | 'completed' | 'failed' | 'cancelled'
   error?: string
+}
+
+// Object Tag
+export interface ObjectTag {
+  key: string
+  value: string
+}
+
+// Get Object Tags Response
+export interface GetObjectTagsResponse {
+  tags: ObjectTag[]
+}
+
+// Object Metadata (HTTP Headers)
+export interface GetObjectMetadataResponse {
+  content_type?: string
+  content_encoding?: string
+  content_language?: string
+  content_disposition?: string
+  cache_control?: string
+  expires?: string
+  metadata: Record<string, string> // Custom x-amz-meta-* headers
 }
 
 // Error types

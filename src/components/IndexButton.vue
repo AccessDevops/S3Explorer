@@ -309,8 +309,7 @@ async function handleRebuildIndex() {
   try {
     await searchIndex.rebuildIndex(
       props.profileId,
-      props.bucketName,
-      settingsStore.batchSize
+      props.bucketName
     )
     await loadIndexMetadata()
     emit('indexChanged')
