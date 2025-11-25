@@ -774,9 +774,9 @@
 
     <!-- View Object Modal -->
     <Dialog v-model:open="showViewModal">
-      <DialogContent class="max-w-4xl max-h-[90vh]">
+      <DialogContent class="!w-[80vw] max-w-none h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle class="flex items-center gap-2">
+          <DialogTitle class="flex items-center gap-2 flex-shrink-0">
             <span>{{ viewingObject ? getFileName(viewingObject.key) : '' }}</span>
             <span
               v-if="objectViewerRef?.contentType"
@@ -787,7 +787,7 @@
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs default-value="content" class="w-full">
+        <Tabs default-value="content" class="w-full flex-1 flex flex-col overflow-hidden">
           <TabsList>
             <TabsTrigger value="content">{{ t('content') }}</TabsTrigger>
             <TabsTrigger value="metadata">{{ t('metadata') }} ({{ metadataCount }})</TabsTrigger>
@@ -798,11 +798,11 @@
             <TabsTrigger value="events">{{ t('eventLog') }} ({{ eventsCount }})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="content">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="content" class="flex-1 flex flex-col overflow-hidden">
+            <div class="overflow-y-auto flex-1">
               <ObjectViewer v-if="viewingObject" ref="objectViewerRef" :object="viewingObject" />
             </div>
-            <div class="mt-4 flex gap-2">
+            <div class="mt-4 flex gap-2 flex-shrink-0">
               <template v-if="objectViewerRef?.isText">
                 <Button v-if="!objectViewerRef?.isEditing" @click="objectViewerRef?.startEditing()">
                   {{ t('edit') }}
@@ -822,8 +822,8 @@
             </div>
           </TabsContent>
 
-          <TabsContent value="metadata">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="metadata" class="flex-1 overflow-hidden">
+            <div class="overflow-y-auto h-full">
               <div v-if="viewingObject" class="space-y-3">
                 <div class="grid grid-cols-2 gap-2 text-sm">
                   <div class="font-medium text-muted-foreground">{{ t('key') }}:</div>
@@ -859,8 +859,8 @@
             </div>
           </TabsContent>
 
-          <TabsContent value="versions">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="versions" class="flex-1 overflow-hidden">
+            <div class="overflow-y-auto h-full">
               <div v-if="viewModalVersions.length > 0" class="space-y-2">
                 <div
                   v-for="version in viewModalVersions"
@@ -897,8 +897,8 @@
             </div>
           </TabsContent>
 
-          <TabsContent value="permissions">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="permissions" class="flex-1 overflow-hidden">
+            <div class="overflow-y-auto h-full">
               <div class="text-center py-8 text-muted-foreground">
                 <p>{{ t('noPermissions') }}</p>
                 <p class="text-xs mt-2">{{ t('acl') }}</p>
@@ -906,8 +906,8 @@
             </div>
           </TabsContent>
 
-          <TabsContent value="tags">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="tags" class="flex-1 overflow-hidden">
+            <div class="overflow-y-auto h-full">
               <!-- Loading State -->
               <div v-if="loadingTags" class="text-center py-8">
                 <p class="text-muted-foreground">{{ t('loading') }}...</p>
@@ -1029,8 +1029,8 @@
             </div>
           </TabsContent>
 
-          <TabsContent value="headers">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="headers" class="flex-1 overflow-hidden">
+            <div class="overflow-y-auto h-full">
               <!-- Loading State -->
               <div v-if="loadingHeaders" class="text-center py-8">
                 <p class="text-muted-foreground">{{ t('loading') }}...</p>
@@ -1133,7 +1133,7 @@
                   </div>
 
                   <!-- Custom Headers Table -->
-                  <div v-if="Object.keys(viewModalHeaders.metadata).length > 0" class="border rounded-lg overflow-hidden">
+                  <div v-if="Object.keys(editingHeaders ? editedHeaders!.metadata : viewModalHeaders.metadata).length > 0" class="border rounded-lg overflow-hidden">
                     <table class="w-full">
                       <thead class="bg-muted">
                         <tr>
@@ -1143,7 +1143,7 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="(value, key) in viewModalHeaders.metadata" :key="key" class="border-t">
+                        <tr v-for="(value, key) in (editingHeaders ? editedHeaders!.metadata : viewModalHeaders.metadata)" :key="key" class="border-t">
                           <td class="p-3 font-medium text-sm">{{ key }}</td>
                           <td class="p-3">
                             <span v-if="!editingHeaders" class="text-sm">{{ value }}</span>
@@ -1176,8 +1176,8 @@
             </div>
           </TabsContent>
 
-          <TabsContent value="events">
-            <div class="overflow-y-auto max-h-[60vh]">
+          <TabsContent value="events" class="flex-1 overflow-hidden">
+            <div class="overflow-y-auto h-full">
               <div class="text-center py-8 text-muted-foreground">
                 <p>{{ t('noEvents') }}</p>
               </div>
@@ -1185,7 +1185,7 @@
           </TabsContent>
         </Tabs>
 
-        <DialogFooter>
+        <DialogFooter class="flex-shrink-0">
           <Button variant="secondary" @click="showViewModal = false">{{ t('close') }}</Button>
         </DialogFooter>
       </DialogContent>
@@ -2669,6 +2669,21 @@ watch(
     }
   }
 )
+
+// Reset editing states when closing the view modal
+watch(showViewModal, (isOpen) => {
+  if (!isOpen) {
+    // Reset headers editing state
+    editingHeaders.value = false
+    showAddCustomHeader.value = false
+    editedHeaders.value = null
+
+    // Reset tags editing state
+    editingTag.value = null
+    showAddTag.value = false
+    newTag.value = { key: '', value: '' }
+  }
+})
 
 function getFolderSize(folder: string): string {
   if (loadingFolderSizes.value.has(folder)) {

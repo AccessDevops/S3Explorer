@@ -191,7 +191,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const searchIndex = useSearchIndex()
-const settingsStore = useSettingsStore()
+const _settingsStore = useSettingsStore()
 
 const buttonRef = ref<HTMLButtonElement | null>(null)
 const showMenu = ref(false)

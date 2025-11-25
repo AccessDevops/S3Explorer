@@ -882,6 +882,7 @@ pub async fn get_object_metadata(
 
 /// Update object metadata (HTTP headers)
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn update_object_metadata(
     profile_id: String,
     bucket: String,

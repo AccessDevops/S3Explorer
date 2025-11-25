@@ -1,0 +1,33 @@
+/**
+ * Override CSS to neutralize side effects from tui-image-editor global styles
+ * This prevents the library from affecting the main application layout
+ */
+
+/* IMPORTANT: Force body/html to NOT have scrollbars or extra space */
+body,
+html {
+  overflow: hidden !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+}
+
+/* Ensure the root app element maintains proper height */
+#app {
+  height: 100vh !important;
+  width: 100vw !important;
+  overflow: hidden !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+/* Prevent tui-image-editor from adding extra margins or padding globally */
+* {
+  box-sizing: border-box;
+}

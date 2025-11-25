@@ -28,7 +28,10 @@ impl S3Adapter {
         );
 
         // Use provided region or default to "us-east-1"
-        let region_str = profile.region.clone().unwrap_or_else(|| "us-east-1".to_string());
+        let region_str = profile
+            .region
+            .clone()
+            .unwrap_or_else(|| "us-east-1".to_string());
         let region = Region::new(region_str.clone());
         let region_provider = RegionProviderChain::first_try(region);
 
@@ -269,7 +272,10 @@ impl S3Adapter {
     /// Returns (total_size, total_count, is_estimate)
     /// - If bucket has <= 1000 objects: returns exact stats with is_estimate=false
     /// - If bucket has > 1000 objects: returns partial stats with is_estimate=true
-    pub async fn estimate_bucket_stats(&self, bucket_name: &str) -> Result<(i64, i64, bool), AppError> {
+    pub async fn estimate_bucket_stats(
+        &self,
+        bucket_name: &str,
+    ) -> Result<(i64, i64, bool), AppError> {
         let mut total_size: i64 = 0;
         let mut total_count: i64 = 0;
 
@@ -438,7 +444,6 @@ impl S3Adapter {
             size,
         })
     }
-
 
     /// Upload an object
     pub async fn put_object(
@@ -876,10 +881,7 @@ impl S3Adapter {
             .map_err(|e| AppError::S3Error(format!("Failed to get object metadata: {}", e)))?;
 
         // Extract custom metadata (x-amz-meta-* headers)
-        let metadata: HashMap<String, String> = output
-            .metadata()
-            .map(|m| m.clone())
-            .unwrap_or_default();
+        let metadata: HashMap<String, String> = output.metadata().cloned().unwrap_or_default();
 
         Ok(GetObjectMetadataResponse {
             content_type: output.content_type().map(|s| s.to_string()),
@@ -893,6 +895,7 @@ impl S3Adapter {
     }
 
     /// Update object metadata (HTTP headers) by copying the object to itself
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_object_metadata(
         &self,
         bucket: &str,
@@ -935,7 +938,9 @@ impl S3Adapter {
         }
         if let Some(exp) = expires {
             // Try to parse the expires string as DateTime
-            if let Ok(dt) = DateTime::from_str(&exp, aws_sdk_s3::primitives::DateTimeFormat::HttpDate) {
+            if let Ok(dt) =
+                DateTime::from_str(&exp, aws_sdk_s3::primitives::DateTimeFormat::HttpDate)
+            {
                 request = request.expires(dt);
             }
         }

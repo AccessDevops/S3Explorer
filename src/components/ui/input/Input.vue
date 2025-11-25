@@ -28,5 +28,8 @@ const modelValue = useVModel(props, 'modelValue', emits, {
         props.class
       )
     "
+    autocapitalize="off"
+    autocorrect="off"
+    spellcheck="false"
   />
 </template>
