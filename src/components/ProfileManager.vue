@@ -192,16 +192,6 @@
             </label>
           </div>
 
-          <div class="flex items-center space-x-2">
-            <input
-              v-model="formData.use_tls"
-              type="checkbox"
-              id="use-tls"
-              class="rounded border-gray-300"
-            />
-            <label for="use-tls" class="text-sm font-medium">{{ t('useTls') }}</label>
-          </div>
-
           <div
             v-if="testResult"
             class="p-3 rounded-md text-sm"
@@ -322,7 +312,6 @@ const formData = reactive({
   secret_key: '',
   session_token: '',
   path_style: false,
-  use_tls: true,
 })
 
 // Validation errors and warnings
@@ -383,7 +372,6 @@ function resetForm() {
   formData.secret_key = ''
   formData.session_token = ''
   formData.path_style = false
-  formData.use_tls = true
   validationErrors.endpoint = ''
   validationErrors.region = ''
   validationWarnings.endpoint = ''
@@ -412,7 +400,6 @@ async function saveProfile() {
     secret_key: formData.secret_key,
     session_token: formData.session_token || undefined,
     path_style: formData.path_style,
-    use_tls: formData.use_tls,
   }
 
   try {
@@ -434,7 +421,6 @@ async function testConnectionHandler() {
     secret_key: formData.secret_key,
     session_token: formData.session_token || undefined,
     path_style: formData.path_style,
-    use_tls: formData.use_tls,
   }
 
   try {
@@ -465,7 +451,6 @@ function editProfileHandler(profile: Profile) {
   formData.secret_key = profile.secret_key
   formData.session_token = profile.session_token || ''
   formData.path_style = profile.path_style
-  formData.use_tls = profile.use_tls
   testResult.value = null
   showAddModal.value = true
 }

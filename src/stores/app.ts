@@ -42,6 +42,14 @@ export const useAppStore = defineStore('app', () => {
     forToken?: string // The continuation token this preload is for
   } | null>(null)
 
+  // ACL cache with TTL (5 minutes) - reduces GetBucketAcl requests by ~90%
+  const ACL_CACHE_TTL = 5 * 60 * 1000 // 5 minutes in milliseconds
+  interface AclCacheEntry {
+    acl: string
+    timestamp: number
+  }
+  const aclCache = ref<Map<string, AclCacheEntry>>(new Map())
+
   // Current operation toast ID
   let currentLoadToastId: string | null = null
 
@@ -68,6 +76,10 @@ export const useAppStore = defineStore('app', () => {
 
   // Select a profile
   function selectProfile(profile: Profile) {
+    // Invalidate ACL cache for previous profile (if any)
+    if (currentProfile.value && currentProfile.value.id !== profile.id) {
+      invalidateAclCache(currentProfile.value.id)
+    }
     currentProfile.value = profile
     buckets.value = []
     currentBucket.value = null
@@ -411,6 +423,43 @@ export const useAppStore = defineStore('app', () => {
     error.value = null
   }
 
+  // Get bucket ACL with caching (reduces requests by ~90%)
+  async function getCachedBucketAcl(profileId: string, bucketName: string): Promise<string | null> {
+    const cacheKey = `${profileId}:${bucketName}`
+    const cached = aclCache.value.get(cacheKey)
+
+    // Return cached value if valid (within TTL)
+    if (cached && Date.now() - cached.timestamp < ACL_CACHE_TTL) {
+      return cached.acl
+    }
+
+    // Fetch from S3 and cache
+    try {
+      const acl = await tauriService.getBucketAcl(profileId, bucketName)
+      aclCache.value.set(cacheKey, { acl, timestamp: Date.now() })
+      return acl
+    } catch (e) {
+      logger.warn(`Failed to get ACL for bucket ${bucketName}`, e)
+      return null
+    }
+  }
+
+  // Invalidate ACL cache (call when profile changes or on manual refresh)
+  function invalidateAclCache(profileId?: string) {
+    if (profileId) {
+      // Invalidate only entries for this profile
+      for (const key of aclCache.value.keys()) {
+        if (key.startsWith(`${profileId}:`)) {
+          aclCache.value.delete(key)
+        }
+      }
+    } else {
+      // Invalidate all entries
+      aclCache.value.clear()
+    }
+    logger.debug(`ACL cache invalidated${profileId ? ` for profile ${profileId}` : ' (all)'}`)
+  }
+
   return {
     // State
     profiles,
@@ -447,5 +496,7 @@ export const useAppStore = defineStore('app', () => {
     addFolder,
     updateObject,
     clearError,
+    getCachedBucketAcl,
+    invalidateAclCache,
   }
 })

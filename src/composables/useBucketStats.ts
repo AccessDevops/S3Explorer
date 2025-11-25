@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { calculateBucketStats } from '../services/tauri'
+import { logger } from '../utils/logger'
 
 /**
  * Bucket statistics stored in IndexedDB
@@ -181,7 +182,7 @@ export function useBucketStats() {
 
       return stats
     } catch (error) {
-      console.error(`Failed to load stats for bucket ${bucketName}:`, error)
+      logger.error(`Failed to load stats for bucket ${bucketName}`, error)
       // Error is logged, no need to show toast for background operation
       return null
     } finally {
@@ -205,7 +206,7 @@ export function useBucketStats() {
       const age = Date.now() - cached.lastUpdated
       return age < cacheTTL
     } catch (error) {
-      console.error('Error checking stats validity:', error)
+      logger.error('Error checking stats validity', error)
       return false
     }
   }
@@ -220,7 +221,7 @@ export function useBucketStats() {
     try {
       return await loadStatsFromDB(profileId, bucketName)
     } catch (error) {
-      console.error('Error loading cached stats:', error)
+      logger.error('Error loading cached stats', error)
       return null
     }
   }
@@ -232,7 +233,7 @@ export function useBucketStats() {
     try {
       await deleteStatsFromDB(profileId, bucketName)
     } catch (error) {
-      console.error('Error invalidating stats:', error)
+      logger.error('Error invalidating stats', error)
     }
   }
 
@@ -243,7 +244,7 @@ export function useBucketStats() {
     try {
       return await getAllStatsFromDB()
     } catch (error) {
-      console.error('Error loading all cached stats:', error)
+      logger.error('Error loading all cached stats', error)
       return []
     }
   }
@@ -263,7 +264,7 @@ export function useBucketStats() {
       })
       // Success logged, operation complete
     } catch (error) {
-      console.error('Error clearing all stats:', error)
+      logger.error('Error clearing all stats', error)
     }
   }
 

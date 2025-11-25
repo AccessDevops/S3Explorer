@@ -69,7 +69,6 @@ export const translations = {
     sessionToken: 'Session Token',
     sessionTokenPlaceholder: 'For temporary credentials',
     pathStyle: 'Force path-style addressing (required for MinIO)',
-    useTls: 'Use TLS/HTTPS',
     configureS3:
       'Configure your S3 connection settings. Supports AWS, MinIO, Backblaze, and other S3-compatible services.',
 
@@ -299,7 +298,7 @@ export const translations = {
     previewWarningLimit: 'Preview Warning Limit',
     previewWarningLimitDescription: 'Show warning before loading files larger than this size (10-500 MB)',
     previewMaxLimit: 'Preview Maximum Limit',
-    previewMaxLimitDescription: 'Prevent loading files larger than this size (100-5000 MB)',
+    previewMaxLimitDescription: 'Prevent loading files larger than this size (10-5000 MB)',
     indexSettings: 'Local Index Settings',
     indexSettingsDescription: 'Configure local search index behavior and performance',
     indexValidityHours: 'Local Index Validity Period',
@@ -428,7 +427,6 @@ export const translations = {
     sessionToken: 'Jeton de session',
     sessionTokenPlaceholder: 'Pour les identifiants temporaires',
     pathStyle: "Forcer l'adressage par chemin (requis pour MinIO)",
-    useTls: 'Utiliser TLS/HTTPS',
     configureS3:
       'Configurez vos paramètres de connexion S3. Prend en charge AWS, MinIO, Backblaze et autres services compatibles S3.',
 
@@ -659,7 +657,7 @@ export const translations = {
     previewWarningLimit: 'Limite d\'avertissement de prévisualisation',
     previewWarningLimitDescription: 'Afficher un avertissement avant de charger les fichiers plus grands que cette taille (10-500 MB)',
     previewMaxLimit: 'Limite maximale de prévisualisation',
-    previewMaxLimitDescription: 'Empêcher le chargement des fichiers plus grands que cette taille (100-5000 MB)',
+    previewMaxLimitDescription: 'Empêcher le chargement des fichiers plus grands que cette taille (10-5000 MB)',
     indexSettings: 'Paramètres de l\'index local',
     indexSettingsDescription: 'Configurer le comportement et les performances de l\'index de recherche local',
     indexValidityHours: 'Période de validité de l\'index local',
@@ -788,7 +786,6 @@ export const translations = {
     sessionToken: '会话令牌',
     sessionTokenPlaceholder: '用于临时凭证',
     pathStyle: '强制使用路径式寻址 (MinIO必需)',
-    useTls: '使用TLS/HTTPS',
     configureS3:
       '配置您的S3连接设置。支持AWS、MinIO、Backblaze和其他S3兼容服务。',
 
@@ -1007,7 +1004,7 @@ export const translations = {
     previewWarningLimit: '预览警告限制',
     previewWarningLimitDescription: '加载大于此大小的文件前显示警告 (10-500 MB)',
     previewMaxLimit: '预览最大限制',
-    previewMaxLimitDescription: '禁止加载大于此大小的文件 (100-5000 MB)',
+    previewMaxLimitDescription: '禁止加载大于此大小的文件 (10-5000 MB)',
 
     // 分页
     loadMore: '加载更多',
@@ -1129,7 +1126,6 @@ export const translations = {
     sessionToken: 'सेशन टोकन',
     sessionTokenPlaceholder: 'अस्थायी क्रेडेंशियल के लिए',
     pathStyle: 'पाथ-स्टाइल एड्रेसिंग को मजबूर करें (MinIO के लिए आवश्यक)',
-    useTls: 'TLS/HTTPS का उपयोग करें',
     configureS3:
       'अपनी S3 कनेक्शन सेटिंग्स कॉन्फ़िगर करें। AWS, MinIO, Backblaze और अन्य S3-संगत सेवाओं को सपोर्ट करता है।',
 
@@ -1348,7 +1344,7 @@ export const translations = {
     previewWarningLimit: 'पूर्वावलोकन चेतावनी सीमा',
     previewWarningLimitDescription: 'इस आकार से बड़ी फ़ाइलें लोड करने से पहले चेतावनी दिखाएं (10-500 MB)',
     previewMaxLimit: 'पूर्वावलोकन अधिकतम सीमा',
-    previewMaxLimitDescription: 'इस आकार से बड़ी फ़ाइलों को लोड करने से रोकें (100-5000 MB)',
+    previewMaxLimitDescription: 'इस आकार से बड़ी फ़ाइलों को लोड करने से रोकें (10-5000 MB)',
 
     // पेजिनेशन
     loadMore: 'अधिक लोड करें',
@@ -1470,7 +1466,6 @@ export const translations = {
     sessionToken: 'Token de sesión',
     sessionTokenPlaceholder: 'Para credenciales temporales',
     pathStyle: 'Forzar direccionamiento de estilo de ruta (requerido para MinIO)',
-    useTls: 'Usar TLS/HTTPS',
     configureS3:
       'Configure sus ajustes de conexión S3. Soporta AWS, MinIO, Backblaze y otros servicios compatibles con S3.',
 
@@ -1696,7 +1691,7 @@ export const translations = {
     previewWarningLimit: 'Límite de advertencia de vista previa',
     previewWarningLimitDescription: 'Mostrar advertencia antes de cargar archivos más grandes que este tamaño (10-500 MB)',
     previewMaxLimit: 'Límite máximo de vista previa',
-    previewMaxLimitDescription: 'Impedir la carga de archivos más grandes que este tamaño (100-5000 MB)',
+    previewMaxLimitDescription: 'Impedir la carga de archivos más grandes que este tamaño (10-5000 MB)',
     indexSettings: 'Configuración del índice local',
     indexSettingsDescription: 'Configurar el comportamiento y rendimiento del índice de búsqueda local',
     indexValidityHours: 'Período de validez del índice local',
@@ -1825,7 +1820,6 @@ export const translations = {
     sessionToken: 'رمز الجلسة',
     sessionTokenPlaceholder: 'للبيانات المؤقتة',
     pathStyle: 'فرض عنونة نمط المسار (مطلوب لـ MinIO)',
-    useTls: 'استخدم TLS/HTTPS',
     configureS3:
       'قم بتكوين إعدادات اتصال S3. يدعم AWS و MinIO و Backblaze والخدمات الأخرى المتوافقة مع S3.',
 
@@ -2051,7 +2045,7 @@ export const translations = {
     previewWarningLimit: 'حد تحذير المعاينة',
     previewWarningLimitDescription: 'إظهار تحذير قبل تحميل الملفات الأكبر من هذا الحجم (10-500 ميجابايت)',
     previewMaxLimit: 'الحد الأقصى للمعاينة',
-    previewMaxLimitDescription: 'منع تحميل الملفات الأكبر من هذا الحجم (100-5000 ميجابايت)',
+    previewMaxLimitDescription: 'منع تحميل الملفات الأكبر من هذا الحجم (10-5000 ميجابايت)',
     indexSettings: 'إعدادات الفهرس المحلي',
     indexSettingsDescription: 'تكوين سلوك وأداء فهرس البحث المحلي',
     indexValidityHours: 'فترة صلاحية الفهرس المحلي',
@@ -2180,7 +2174,6 @@ export const translations = {
     sessionToken: 'সেশন টোকেন',
     sessionTokenPlaceholder: 'অস্থায়ী শংসাপত্রের জন্য',
     pathStyle: 'পাথ-স্টাইল ঠিকানা প্রয়োগ করুন (MinIO এর জন্য প্রয়োজনীয়)',
-    useTls: 'TLS/HTTPS ব্যবহার করুন',
     configureS3:
       'আপনার S3 সংযোগ সেটিংস কনফিগার করুন। AWS, MinIO, Backblaze এবং অন্যান্য S3-সামঞ্জস্যপূর্ণ সেবা সমর্থন করে।',
 
@@ -2406,7 +2399,7 @@ export const translations = {
     previewWarningLimit: 'প্রিভিউ সতর্কতা সীমা',
     previewWarningLimitDescription: 'এই আকারের চেয়ে বড় ফাইল লোড করার আগে সতর্কতা দেখান (10-500 MB)',
     previewMaxLimit: 'প্রিভিউ সর্বোচ্চ সীমা',
-    previewMaxLimitDescription: 'এই আকারের চেয়ে বড় ফাইল লোড করা প্রতিরোধ করুন (100-5000 MB)',
+    previewMaxLimitDescription: 'এই আকারের চেয়ে বড় ফাইল লোড করা প্রতিরোধ করুন (10-5000 MB)',
     indexSettings: 'স্থানীয় সূচক সেটিংস',
     indexSettingsDescription: 'স্থানীয় অনুসন্ধান সূচকের আচরণ এবং কর্মক্ষমতা কনফিগার করুন',
     indexValidityHours: 'স্থানীয় সূচক বৈধতার সময়কাল',
@@ -2535,7 +2528,6 @@ export const translations = {
     sessionToken: 'Token de sessão',
     sessionTokenPlaceholder: 'Para credenciais temporárias',
     pathStyle: 'Forçar endereçamento em estilo de caminho (necessário para MinIO)',
-    useTls: 'Usar TLS/HTTPS',
     configureS3:
       'Configure suas definições de conexão S3. Suporta AWS, MinIO, Backblaze e outros serviços compatíveis com S3.',
 
@@ -2761,7 +2753,7 @@ export const translations = {
     previewWarningLimit: 'Limite de aviso de pré-visualização',
     previewWarningLimitDescription: 'Mostrar aviso antes de carregar arquivos maiores que este tamanho (10-500 MB)',
     previewMaxLimit: 'Limite máximo de pré-visualização',
-    previewMaxLimitDescription: 'Impedir o carregamento de arquivos maiores que este tamanho (100-5000 MB)',
+    previewMaxLimitDescription: 'Impedir o carregamento de arquivos maiores que este tamanho (10-5000 MB)',
     indexSettings: 'Configurações do índice local',
     indexSettingsDescription: 'Configurar o comportamento e o desempenho do índice de pesquisa local',
     indexValidityHours: 'Período de validade do índice local',
@@ -2890,7 +2882,6 @@ export const translations = {
     sessionToken: 'Token Sesi',
     sessionTokenPlaceholder: 'Untuk kredensial sementara',
     pathStyle: 'Paksa pengalamatan gaya jalur (diperlukan untuk MinIO)',
-    useTls: 'Gunakan TLS/HTTPS',
     configureS3:
       'Konfigurasikan pengaturan koneksi S3 Anda. Mendukung AWS, MinIO, Backblaze, dan layanan lain yang kompatibel dengan S3.',
 
@@ -3116,7 +3107,7 @@ export const translations = {
     previewWarningLimit: 'Batas Peringatan Pratinjau',
     previewWarningLimitDescription: 'Tampilkan peringatan sebelum memuat file lebih besar dari ukuran ini (10-500 MB)',
     previewMaxLimit: 'Batas Maksimal Pratinjau',
-    previewMaxLimitDescription: 'Cegah pemuatan file lebih besar dari ukuran ini (100-5000 MB)',
+    previewMaxLimitDescription: 'Cegah pemuatan file lebih besar dari ukuran ini (10-5000 MB)',
     indexSettings: 'Pengaturan Indeks Lokal',
     indexSettingsDescription: 'Konfigurasikan perilaku dan kinerja indeks pencarian lokal',
     indexValidityHours: 'Periode Validitas Indeks Lokal',
@@ -3245,7 +3236,6 @@ export const translations = {
     sessionToken: 'Token sesiune',
     sessionTokenPlaceholder: 'Pentru credențiale temporare',
     pathStyle: 'Forțează adresare stil cale (necesar pentru MinIO)',
-    useTls: 'Folosește TLS/HTTPS',
     configureS3:
       'Configurează setările conexiunii S3. Suportă AWS, MinIO, Backblaze și alte servicii compatibile S3.',
 
@@ -3471,7 +3461,7 @@ export const translations = {
     previewWarningLimit: 'Limită avertisment previzualizare',
     previewWarningLimitDescription: 'Afișează avertisment înainte de a încărca fișiere mai mari decât această dimensiune (10-500 MB)',
     previewMaxLimit: 'Limită maximă previzualizare',
-    previewMaxLimitDescription: 'Împiedică încărcarea fișierelor mai mari decât această dimensiune (100-5000 MB)',
+    previewMaxLimitDescription: 'Împiedică încărcarea fișierelor mai mari decât această dimensiune (10-5000 MB)',
     indexSettings: 'Setări Index Local',
     indexSettingsDescription: 'Configurează comportamentul și performanța indexului de căutare local',
     indexValidityHours: 'Perioadă de validitate a indexului local',

@@ -178,6 +178,7 @@ import { useSearchIndex } from '../composables/useSearchIndex'
 import { useI18n } from '../composables/useI18n'
 import { useSettingsStore } from '../stores/settings'
 import { Button } from './ui/button'
+import { logger } from '../utils/logger'
 
 const props = defineProps<{
   profileId: string
@@ -228,15 +229,10 @@ function toggleMenu() {
 
 // Icon state computed property
 const iconState = computed(() => {
-  const state = (() => {
-    if (searchIndex.isBuilding.value) return 'building' // blue blinking
-    if (!indexMetadata.value) return 'missing' // orange
-    if (indexEnabled.value) return 'active' // green
-    return 'inactive' // gray
-  })()
-
-  console.log(`[IndexButton] iconState = ${state}, isBuilding=${searchIndex.isBuilding.value}, hasMetadata=${!!indexMetadata.value}, indexEnabled=${indexEnabled.value}`)
-  return state
+  if (searchIndex.isBuilding.value) return 'building' // blue blinking
+  if (!indexMetadata.value) return 'missing' // orange
+  if (indexEnabled.value) return 'active' // green
+  return 'inactive' // gray
 })
 
 // Icon color classes based on state
@@ -282,16 +278,13 @@ function formatRelativeTime(timestamp: number): string {
 
 // Load index metadata
 async function loadIndexMetadata() {
-  console.log(`[IndexButton] loadIndexMetadata called for ${props.profileId}/${props.bucketName}`)
   if (!props.profileId || !props.bucketName) return
 
   const metadata = await searchIndex.getIndexMetadata(props.profileId, props.bucketName)
-  console.log(`[IndexButton] Loaded metadata:`, metadata)
   indexMetadata.value = metadata
 
   // Load enabled state
   indexEnabled.value = searchIndex.isIndexEnabled(props.profileId, props.bucketName)
-  console.log(`[IndexButton] indexEnabled = ${indexEnabled.value}`)
 }
 
 // Handle toggle index enabled/disabled
@@ -314,7 +307,7 @@ async function handleRebuildIndex() {
     await loadIndexMetadata()
     emit('indexChanged')
   } catch (error) {
-    console.error('Error rebuilding index:', error)
+    logger.error('Error rebuilding index', error)
   }
 }
 
@@ -342,10 +335,8 @@ watch(
 watch(
   () => searchIndex.isBuilding.value,
   (newVal, oldVal) => {
-    console.log(`[IndexButton] isBuilding watcher: ${oldVal} -> ${newVal}`)
     // When building finishes, reload metadata
     if (oldVal && !newVal) {
-      console.log(`[IndexButton] Build completed, reloading metadata`)
       loadIndexMetadata()
     }
   }

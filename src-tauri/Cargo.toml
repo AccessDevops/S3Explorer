@@ -28,7 +28,9 @@ aws-smithy-types = "1.1"
 uuid = { version = "1.7", features = ["v4", "serde"] }
 dirs = "5.0"
 aes-gcm = "0.10"
-base64 = "0.21"
+base64 = "0.22"
+rand = "0.8"
+url = "2.5"
 
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem

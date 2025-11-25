@@ -333,7 +333,7 @@
                   type="number"
                   :model-value="settingsStore.previewMaxLimitMB"
                   @update:model-value="(val) => settingsStore.setPreviewMaxLimitMB(Number(val))"
-                  min="100"
+                  min="10"
                   max="5000"
                   class="flex-1"
                 />
@@ -462,6 +462,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { logger } from '../utils/logger'
 
 // Component for settings button and modal
 import { useSettingsStore } from '../stores/settings'
@@ -586,7 +587,7 @@ async function handleDeleteIndexFromTable(profileId: string, bucketName: string)
     // Reload the table
     await loadAllIndexes()
   } catch (error) {
-    console.error('Failed to delete index:', error)
+    logger.error('Failed to delete index', error)
     toast.error(t('errorOccurred'))
   }
 }

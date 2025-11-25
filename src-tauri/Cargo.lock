@@ -3650,14 +3650,16 @@ dependencies = [
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
- "base64 0.21.7",
+ "base64 0.22.1",
  "dirs",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "thiserror",
  "tokio",
+ "url",
  "uuid",
 ]
 

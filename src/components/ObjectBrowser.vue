@@ -1994,6 +1994,7 @@ const searchDuration = ref(0) // milliseconds - actual time taken for search
 const useIndexForSearch = ref(false) // whether current search uses index
 const hasSearchIndex = ref(false) // whether an index is available for current bucket
 const currentIndexSize = ref(0) // number of objects in the current index
+const searchVersion = ref(0) // Guard against race conditions in search results
 
 // Index build prompt refs
 const showIndexBuildPrompt = ref(false)
@@ -2469,7 +2470,11 @@ const searchSettingsMenuStyle = computed(() => {
 })
 
 // Watch for search query changes to trigger search
+// Optimized with race condition protection and reduced debounce (300ms vs 500ms)
 watch(searchQuery, async (query) => {
+  // Increment version to invalidate any in-flight searches (race condition protection)
+  const currentSearchVersion = ++searchVersion.value
+
   // Clear any existing debounce timer
   if (searchDebounceTimer.value !== null) {
     clearTimeout(searchDebounceTimer.value)
@@ -2492,8 +2497,13 @@ watch(searchQuery, async (query) => {
   const profileId = appStore.currentProfile.id
   const bucket = appStore.currentBucket
 
-  // Debounce search by 500ms
+  // Debounce search by 300ms (reduced from 500ms for better UX)
   searchDebounceTimer.value = window.setTimeout(async () => {
+    // Check if this search is still current (race condition guard)
+    if (currentSearchVersion !== searchVersion.value) {
+      return // A newer search has been initiated, abort this one
+    }
+
     try {
       isSearching.value = true
       globalSearchResults.value = []
@@ -2513,11 +2523,18 @@ watch(searchQuery, async (query) => {
       const hasIndex = await searchIndex.hasValidIndex(profileId, bucket)
       const indexEnabled = searchIndex.isIndexEnabled(profileId, bucket)
 
+      // Check version again after async operation
+      if (currentSearchVersion !== searchVersion.value) return
+
       if (hasIndex && indexEnabled) {
         logger.debug('Using search index for instant results')
         useIndexForSearch.value = true
 
         const index = await searchIndex.loadIndex(profileId, bucket)
+
+        // Check version again after async operation
+        if (currentSearchVersion !== searchVersion.value) return
+
         if (index) {
           const results = searchIndex.searchInIndex(index, query, searchPrefix)
           globalSearchResults.value = results
@@ -2553,8 +2570,8 @@ watch(searchQuery, async (query) => {
 
       // Paginate through objects with improved feedback
       do {
-        // Check if search was aborted
-        if (searchAbortController.value.signal.aborted) {
+        // Check if search was aborted or version changed
+        if (searchAbortController.value.signal.aborted || currentSearchVersion !== searchVersion.value) {
           break
         }
 
@@ -2572,6 +2589,11 @@ watch(searchQuery, async (query) => {
           settingsStore.batchSize,
           false // No delimiter - list all objects recursively
         )
+
+        // Check version after async operation (race condition guard)
+        if (currentSearchVersion !== searchVersion.value) {
+          break // Discard results from stale search
+        }
 
         // Increment counters
         searchPagesScanned.value++
@@ -2618,22 +2640,27 @@ watch(searchQuery, async (query) => {
       } while (continuationToken && !searchAbortController.value.signal.aborted)
 
     } catch (e: any) {
+      // Ignore errors from aborted/stale searches
+      if (currentSearchVersion !== searchVersion.value) return
       if (e.name !== 'AbortError') {
         logger.error('Search failed:', e)
         toast.error(`${t('errorOccurred')}: ${e}`)
       }
       globalSearchResults.value = []
     } finally {
-      if (!searchAbortController.value?.signal.aborted) {
-        // Calculate total search duration for live search
-        searchDuration.value = Date.now() - searchStartTime.value
-        isSearching.value = false
+      // Only update state if this is still the current search
+      if (currentSearchVersion === searchVersion.value) {
+        if (!searchAbortController.value?.signal.aborted) {
+          // Calculate total search duration for live search
+          searchDuration.value = Date.now() - searchStartTime.value
+          isSearching.value = false
+        }
+        searchAbortController.value = null
+        searchSpeed.value = 0
+        searchTimeRemaining.value = 0
       }
-      searchAbortController.value = null
-      searchSpeed.value = 0
-      searchTimeRemaining.value = 0
     }
-  }, 500) // Debounce delay
+  }, 300) // Debounce delay (optimized from 500ms to 300ms)
 })
 
 // Clear selection and cached data when navigating to a different folder
@@ -4109,7 +4136,7 @@ async function showContextMenu(event: MouseEvent, obj: S3Object, index: number) 
       contextMenu.value.currentContentType = metadata.content_type || null
     }
   } catch (error) {
-    console.error('Failed to load content type:', error)
+    logger.error('Failed to load content type', error)
   }
 }
 
@@ -4119,9 +4146,10 @@ function closeContextMenu() {
 
 function startRename() {
   if (contextMenu.value.object) {
-    renamingObject.value = contextMenu.value.object
-    newFileName.value = getFileName(contextMenu.value.object.key)
-    showRenameModal.value = true
+    rename.object = contextMenu.value.object
+    rename.newName = getFileName(contextMenu.value.object.key)
+    rename.validationError = ''
+    modals.rename = true
     closeContextMenu()
   }
 }
@@ -4154,6 +4182,13 @@ async function renameFileHandler() {
 
     // Delete old key
     await deleteObject(appStore.currentProfile.id, appStore.currentBucket, oldKey)
+
+    // Update selection: transfer selection from old key to new key
+    const wasSelected = selectedItems.value.has(oldKey)
+    if (wasSelected) {
+      selectedItems.value.delete(oldKey)
+      selectedItems.value.add(newKey)
+    }
 
     // Optimistic update: remove old object and add new one
     appStore.removeObject(oldKey)

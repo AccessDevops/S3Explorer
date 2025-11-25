@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// S3 connection profile
+use crate::crypto::Crypto;
+use crate::errors::AppError;
+
+/// S3 connection profile (decrypted, used at runtime)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub id: String,
@@ -11,7 +14,79 @@ pub struct Profile {
     pub secret_key: String,
     pub session_token: Option<String>,
     pub path_style: bool, // Force path-style addressing
-    pub use_tls: bool,    // Use HTTPS (false for local MinIO)
+}
+
+/// S3 connection profile with encrypted credentials (stored on disk)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptedProfile {
+    pub id: String,
+    pub name: String,
+    pub endpoint: Option<String>,
+    pub region: Option<String>,
+    #[serde(alias = "access_key")] // For migration from unencrypted format
+    pub access_key_encrypted: String,
+    #[serde(alias = "secret_key")] // For migration from unencrypted format
+    pub secret_key_encrypted: String,
+    #[serde(alias = "session_token")] // For migration from unencrypted format
+    pub session_token_encrypted: Option<String>,
+    pub path_style: bool,
+    /// Version flag to detect encrypted vs plaintext profiles
+    #[serde(default)]
+    pub encrypted: bool,
+}
+
+impl Profile {
+    /// Encrypt this profile for storage
+    pub fn to_encrypted(&self, crypto: &Crypto) -> Result<EncryptedProfile, AppError> {
+        Ok(EncryptedProfile {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            endpoint: self.endpoint.clone(),
+            region: self.region.clone(),
+            access_key_encrypted: crypto.encrypt(&self.access_key)?,
+            secret_key_encrypted: crypto.encrypt(&self.secret_key)?,
+            session_token_encrypted: crypto.encrypt_option(self.session_token.as_deref())?,
+            path_style: self.path_style,
+            encrypted: true,
+        })
+    }
+}
+
+impl EncryptedProfile {
+    /// Decrypt this profile for use
+    pub fn to_decrypted(&self, crypto: &Crypto) -> Result<Profile, AppError> {
+        // If not marked as encrypted, assume plaintext (migration case)
+        let (access_key, secret_key, session_token) = if self.encrypted {
+            (
+                crypto.decrypt(&self.access_key_encrypted)?,
+                crypto.decrypt(&self.secret_key_encrypted)?,
+                crypto.decrypt_option(self.session_token_encrypted.as_deref())?,
+            )
+        } else {
+            // Plaintext migration: fields contain actual values, not encrypted
+            (
+                self.access_key_encrypted.clone(),
+                self.secret_key_encrypted.clone(),
+                self.session_token_encrypted.clone(),
+            )
+        };
+
+        Ok(Profile {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            endpoint: self.endpoint.clone(),
+            region: self.region.clone(),
+            access_key,
+            secret_key,
+            session_token,
+            path_style: self.path_style,
+        })
+    }
+
+    /// Check if this profile needs migration (is stored in plaintext)
+    pub fn needs_migration(&self) -> bool {
+        !self.encrypted
+    }
 }
 
 /// Request to test a connection
@@ -272,4 +347,20 @@ pub struct UpdateObjectMetadataRequest {
     pub cache_control: Option<String>,
     pub expires: Option<String>,
     pub metadata: std::collections::HashMap<String, String>,
+}
+
+/// Response from batch delete operation
+#[derive(Debug, Serialize)]
+pub struct DeleteObjectsResponse {
+    pub deleted_count: usize,
+    pub error_count: usize,
+    pub errors: Vec<DeleteObjectError>,
+}
+
+/// Error details for a single object deletion failure
+#[derive(Debug, Serialize)]
+pub struct DeleteObjectError {
+    pub key: String,
+    pub code: Option<String>,
+    pub message: Option<String>,
 }

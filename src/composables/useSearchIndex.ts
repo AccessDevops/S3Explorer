@@ -4,6 +4,7 @@ import type { S3Object } from '../types'
 import { useToast } from './useToast'
 import { useI18n } from './useI18n'
 import { useSettingsStore } from '../stores/settings'
+import { logger } from '../utils/logger'
 
 /**
  * Search index stored in IndexedDB
@@ -163,7 +164,7 @@ export function useSearchIndex() {
       const validityMs = settingsStore.indexValidityHours * 60 * 60 * 1000
       return age < validityMs
     } catch (error) {
-      console.error('Error checking index validity:', error)
+      logger.error('Error checking index validity', error)
       return false
     }
   }
@@ -199,7 +200,7 @@ export function useSearchIndex() {
         totalObjects: index.totalObjects,
       }
     } catch (error) {
-      console.error('Error checking index status:', error)
+      logger.error('Error checking index status', error)
       return { exists: false, isValid: false, age: 0, totalObjects: 0 }
     }
   }
@@ -215,7 +216,7 @@ export function useSearchIndex() {
       const indexId = getIndexId(profileId, bucketName)
       return await loadIndexFromDB(indexId)
     } catch (error) {
-      console.error('Error loading index:', error)
+      logger.error('Error loading index', error)
       return null
     }
   }
@@ -415,7 +416,7 @@ export function useSearchIndex() {
       await deleteIndexFromDB(indexId)
       toast.success(t('indexDeleted'))
     } catch (error) {
-      console.error('Error deleting index:', error)
+      logger.error('Error deleting index', error)
       toast.error(t('errorDeletingIndex'))
     }
   }
@@ -449,7 +450,7 @@ export function useSearchIndex() {
       // Return -1 to indicate "large bucket"
       return -1
     } catch (error) {
-      console.error('Error estimating bucket size:', error)
+      logger.error('Error estimating bucket size', error)
       return -1
     }
   }
@@ -461,7 +462,7 @@ export function useSearchIndex() {
     try {
       return await getAllIndexesFromDB()
     } catch (error) {
-      console.error('Error loading all indexes:', error)
+      logger.error('Error loading all indexes', error)
       return []
     }
   }
@@ -487,7 +488,7 @@ export function useSearchIndex() {
         sizeInBytes: index.sizeInBytes,
       }
     } catch (error) {
-      console.error('Error loading index metadata:', error)
+      logger.error('Error loading index metadata', error)
       return null
     }
   }

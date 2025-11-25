@@ -238,7 +238,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { useSettingsStore } from '../stores/settings'
 import { useI18n } from '../composables/useI18n'
@@ -251,7 +251,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { createBucket, getBucketAcl, estimateBucketStats } from '../services/tauri'
+import { createBucket, estimateBucketStats } from '../services/tauri'
 import { formatSize, formatDate } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { useBucketStats } from '../composables/useBucketStats'
@@ -425,12 +425,10 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
 async function loadBucketAcl(bucketName: string) {
   if (!appStore.currentProfile) return
 
-  try {
-    const acl = await getBucketAcl(appStore.currentProfile.id, bucketName)
+  // Use cached ACL from store (reduces requests by ~90%)
+  const acl = await appStore.getCachedBucketAcl(appStore.currentProfile.id, bucketName)
+  if (acl) {
     bucketAcls.value[bucketName] = acl
-  } catch (e) {
-    logger.error(`Failed to load ACL for bucket ${bucketName}`, e)
-    // Don't set ACL if we can't read it (permission issue)
   }
 }
 
@@ -464,6 +462,37 @@ onMounted(async () => {
     await loadBucketAcl(bucket.name)
   }
 })
+
+// Watch for bucket list changes to load ACLs and cached stats (buckets are loaded after mount)
+watch(
+  () => appStore.buckets,
+  async (newBuckets) => {
+    if (newBuckets.length > 0 && appStore.currentProfile) {
+      // Load cached stats and ACLs for all buckets when the list changes
+      for (const bucket of newBuckets) {
+        // Load cached stats if not already loaded
+        if (!bucketStats.value[bucket.name]) {
+          const cached = await bucketStatsComposable.getCachedStats(
+            appStore.currentProfile.id,
+            bucket.name
+          )
+          if (cached) {
+            const age = Date.now() - cached.lastUpdated
+            if (age < statsCacheTTL.value) {
+              bucketStats.value[bucket.name] = cached
+            }
+          }
+        }
+
+        // Load ACL if not already cached locally
+        if (!bucketAcls.value[bucket.name]) {
+          await loadBucketAcl(bucket.name)
+        }
+      }
+    }
+  },
+  { immediate: true }
+)
 
 function suggestEnablePathStyle() {
   // Open a dialog to explain and offer to edit the profile

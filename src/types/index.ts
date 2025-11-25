@@ -8,7 +8,6 @@ export interface Profile {
   secret_key: string
   session_token?: string
   path_style: boolean
-  use_tls: boolean
 }
 
 // Test Connection

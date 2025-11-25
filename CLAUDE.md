@@ -101,8 +101,7 @@ Profile structure:
   "access_key": "...",
   "secret_key": "...",
   "session_token": null,
-  "path_style": true,
-  "use_tls": false
+  "path_style": true
 }
 ```
 

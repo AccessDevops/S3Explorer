@@ -9,6 +9,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import ImageEditor from 'tui-image-editor'
 import { useI18n } from '../composables/useI18n'
+import { logger } from '../utils/logger'
 
 const props = defineProps<{
   imageUrl: string
@@ -239,7 +240,7 @@ function initializeEditorWithImage(imageDataUrl?: string) {
     })
 
     editorInstance.on('error', (error: any) => {
-      console.error('Image editor error:', error)
+      logger.error('Image editor error', error)
       emit('error', error.message || 'Failed to load image')
     })
 
@@ -263,7 +264,7 @@ function initializeEditorWithImage(imageDataUrl?: string) {
       emit('modified')
     })
   } catch (error: any) {
-    console.error('Failed to initialize image editor:', error)
+    logger.error('Failed to initialize image editor', error)
     emit('error', error.message || 'Failed to initialize editor')
   }
 }
@@ -303,7 +304,7 @@ function initializeEditor() {
 
     // Handle errors
     editorInstance.on('error', (error: any) => {
-      console.error('Image editor error:', error)
+      logger.error('Image editor error', error)
       emit('error', error.message || 'Failed to load image')
     })
 
@@ -329,7 +330,7 @@ function initializeEditor() {
       emit('modified')
     })
   } catch (error: any) {
-    console.error('Failed to initialize image editor:', error)
+    logger.error('Failed to initialize image editor', error)
     emit('error', error.message || 'Failed to initialize editor')
   }
 }
@@ -337,7 +338,7 @@ function initializeEditor() {
 // Get edited image as Blob
 async function getEditedImage(format: 'png' | 'jpeg' = 'png', quality = 0.92): Promise<Blob | null> {
   if (!editorInstance) {
-    console.error('Editor not initialized')
+    logger.error('Editor not initialized')
     return null
   }
 
@@ -350,7 +351,7 @@ async function getEditedImage(format: 'png' | 'jpeg' = 'png', quality = 0.92): P
 
     return blob
   } catch (error) {
-    console.error('Failed to get edited image:', error)
+    logger.error('Failed to get edited image', error)
     return null
   }
 }
@@ -383,7 +384,7 @@ function destroyEditor() {
       document.documentElement.style.overflow = ''
       document.documentElement.style.height = ''
     } catch (error) {
-      console.error('Error destroying editor:', error)
+      logger.error('Error destroying editor', error)
     }
   }
 }

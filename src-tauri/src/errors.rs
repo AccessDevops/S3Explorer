@@ -21,6 +21,12 @@ pub enum AppError {
     #[error("Serialization error: {0}")]
     SerdeError(#[from] serde_json::Error),
 
+    #[error("Cryptographic error: {0}")]
+    CryptoError(String),
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

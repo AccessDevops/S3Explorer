@@ -209,8 +209,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save preview warning limit to localStorage
   const setPreviewWarningLimitMB = (limit: number) => {
-    if (limit < 10 || limit > 500) {
-      throw new Error('Preview warning limit must be between 10 and 500 MB')
+    if (isNaN(limit) || limit < 10 || limit > 500) {
+      return // Silently ignore invalid values during typing
     }
     previewWarningLimitMB.value = limit
     localStorage.setItem('app-previewWarningLimitMB', String(limit))
@@ -218,8 +218,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save preview max limit to localStorage
   const setPreviewMaxLimitMB = (limit: number) => {
-    if (limit < 100 || limit > 5000) {
-      throw new Error('Preview max limit must be between 100 and 5000 MB')
+    if (isNaN(limit) || limit < 10 || limit > 5000) {
+      return // Silently ignore invalid values during typing
     }
     previewMaxLimitMB.value = limit
     localStorage.setItem('app-previewMaxLimitMB', String(limit))

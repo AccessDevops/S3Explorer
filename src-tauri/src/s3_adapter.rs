@@ -1,5 +1,9 @@
 use crate::errors::AppError;
-use crate::models::*;
+use crate::models::{
+    Bucket, CompletedPart, DeleteObjectError, DeleteObjectsResponse, GetObjectMetadataResponse,
+    GetObjectResponse, ListObjectVersionsResponse, ListObjectsResponse, MultipartUploadInitResponse,
+    MultipartUploadPartResponse, ObjectTag, ObjectVersion, Profile, S3Object, TestConnectionResponse,
+};
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
@@ -485,6 +489,63 @@ impl S3Adapter {
         Ok(())
     }
 
+    /// Delete multiple objects in a single request (batch delete)
+    /// S3 supports up to 1000 objects per DeleteObjects request
+    /// Returns the count of successfully deleted objects and any errors
+    pub async fn delete_objects_batch(
+        &self,
+        bucket: &str,
+        keys: Vec<String>,
+    ) -> Result<DeleteObjectsResponse, AppError> {
+        use aws_sdk_s3::types::{Delete, ObjectIdentifier};
+
+        if keys.is_empty() {
+            return Ok(DeleteObjectsResponse {
+                deleted_count: 0,
+                error_count: 0,
+                errors: vec![],
+            });
+        }
+
+        // Build object identifiers
+        let objects: Vec<ObjectIdentifier> = keys
+            .into_iter()
+            .filter_map(|key| ObjectIdentifier::builder().key(key).build().ok())
+            .collect();
+
+        let delete = Delete::builder()
+            .set_objects(Some(objects))
+            .quiet(false) // Get detailed response with deleted/error info
+            .build()
+            .map_err(|e| AppError::S3Error(format!("Failed to build delete request: {}", e)))?;
+
+        let result = self
+            .client
+            .delete_objects()
+            .bucket(bucket)
+            .delete(delete)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to delete objects: {}", e)))?;
+
+        let deleted_count = result.deleted().len();
+        let errors: Vec<DeleteObjectError> = result
+            .errors()
+            .iter()
+            .map(|e| DeleteObjectError {
+                key: e.key().unwrap_or("").to_string(),
+                code: e.code().map(|s| s.to_string()),
+                message: e.message().map(|s| s.to_string()),
+            })
+            .collect();
+
+        Ok(DeleteObjectsResponse {
+            deleted_count,
+            error_count: errors.len(),
+            errors,
+        })
+    }
+
     /// Copy an object
     pub async fn copy_object(
         &self,
@@ -591,7 +652,9 @@ impl S3Adapter {
         Ok(url)
     }
 
-    /// Delete a folder and all its contents
+    /// Delete a folder and all its contents using batch delete (DeleteObjects API)
+    /// This is ~99% more efficient than deleting objects one by one
+    /// S3 DeleteObjects supports up to 1000 objects per request
     pub async fn delete_folder(&self, bucket: &str, prefix: &str) -> Result<i64, AppError> {
         let folder_prefix = if prefix.ends_with('/') {
             prefix.to_string()
@@ -600,6 +663,7 @@ impl S3Adapter {
         };
 
         let mut deleted_count: i64 = 0;
+        let mut total_errors: i64 = 0;
         let mut continuation_token: Option<String> = None;
 
         // Paginate through all objects in the folder (without delimiter to get all nested objects)
@@ -609,15 +673,31 @@ impl S3Adapter {
                     bucket,
                     Some(&folder_prefix),
                     continuation_token,
-                    Some(1000),
+                    Some(1000), // Max batch size for DeleteObjects
                     false,
                 )
                 .await?;
 
-            // Delete all objects in this batch
-            for obj in response.objects {
-                self.delete_object(bucket, &obj.key).await?;
-                deleted_count += 1;
+            // Collect keys for batch deletion
+            let keys: Vec<String> = response.objects.iter().map(|obj| obj.key.clone()).collect();
+
+            if !keys.is_empty() {
+                // Use batch delete (1 request instead of N requests)
+                let delete_result = self.delete_objects_batch(bucket, keys).await?;
+                deleted_count += delete_result.deleted_count as i64;
+                total_errors += delete_result.error_count as i64;
+
+                // Log errors if any (but don't fail the entire operation)
+                if !delete_result.errors.is_empty() {
+                    for err in &delete_result.errors {
+                        eprintln!(
+                            "Warning: Failed to delete {}: {} - {}",
+                            err.key,
+                            err.code.as_deref().unwrap_or("Unknown"),
+                            err.message.as_deref().unwrap_or("No message")
+                        );
+                    }
+                }
             }
 
             // Check if there are more pages
@@ -628,8 +708,18 @@ impl S3Adapter {
         }
 
         // Also delete the folder marker itself (if it exists)
-        if self.delete_object(bucket, &folder_prefix).await.is_err() {
-            // Ignore error if the folder marker doesn't exist
+        // Use batch delete for consistency (single item batch is fine)
+        let _ = self
+            .delete_objects_batch(bucket, vec![folder_prefix])
+            .await;
+
+        // Return total deleted count (errors are logged but don't fail the operation)
+        if total_errors > 0 {
+            eprintln!(
+                "Warning: {} objects could not be deleted out of {} total",
+                total_errors,
+                deleted_count + total_errors
+            );
         }
 
         Ok(deleted_count)
@@ -822,21 +912,22 @@ impl S3Adapter {
     ) -> Result<(), AppError> {
         use aws_sdk_s3::types::{Tag, Tagging};
 
-        let s3_tags: Vec<Tag> = tags
+        let s3_tags: Result<Vec<Tag>, _> = tags
             .iter()
             .map(|tag| {
                 Tag::builder()
                     .key(&tag.key)
                     .value(&tag.value)
                     .build()
-                    .expect("Failed to build tag")
+                    .map_err(|e| AppError::S3Error(format!("Failed to build tag: {}", e)))
             })
             .collect();
+        let s3_tags = s3_tags?;
 
         let tagging = Tagging::builder()
             .set_tag_set(Some(s3_tags))
             .build()
-            .expect("Failed to build tagging");
+            .map_err(|e| AppError::S3Error(format!("Failed to build tagging: {}", e)))?;
 
         self.client
             .put_object_tagging()

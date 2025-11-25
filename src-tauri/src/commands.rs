@@ -1,6 +1,7 @@
 use crate::models::*;
 use crate::profiles::ProfileStore;
 use crate::s3_adapter::S3Adapter;
+use crate::validation;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
@@ -87,6 +88,9 @@ pub async fn create_bucket(
     bucket_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Validate bucket name
+    validation::validate_bucket_name(&bucket_name).map_err(|e| e.to_string())?;
+
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
@@ -234,6 +238,10 @@ pub async fn put_object(
     content_type: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Validate inputs
+    validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
+    validation::validate_object_key(&key).map_err(|e| e.to_string())?;
+
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
@@ -329,6 +337,10 @@ pub async fn create_folder(
     folder_path: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Validate inputs
+    validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
+    let validated_path = validation::validate_folder_path(&folder_path).map_err(|e| e.to_string())?;
+
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
@@ -339,7 +351,7 @@ pub async fn create_folder(
         .map_err(|e| e.to_string())?;
 
     adapter
-        .create_folder(&bucket, &folder_path)
+        .create_folder(&bucket, &validated_path)
         .await
         .map_err(|e| e.to_string())
 }
@@ -354,6 +366,11 @@ pub async fn generate_presigned_url(
     expires_in_secs: u64,
     state: State<'_, AppState>,
 ) -> Result<PresignedUrlResponse, String> {
+    // Validate inputs
+    validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
+    validation::validate_object_key(&key).map_err(|e| e.to_string())?;
+    validation::validate_presigned_url_expiry(expires_in_secs).map_err(|e| e.to_string())?;
+
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
