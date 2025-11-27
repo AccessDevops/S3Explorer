@@ -5,7 +5,14 @@
         <ProfileManager />
         <BucketList v-if="appStore.hasProfile" />
       </div>
-      <SettingsButton />
+      <div class="flex gap-2 p-4 border-t border-white/10">
+        <div class="flex-1">
+          <MetricsButton />
+        </div>
+        <div class="flex-1">
+          <SettingsButton />
+        </div>
+      </div>
     </div>
     <div class="flex-1 overflow-hidden bg-background relative">
       <ObjectBrowser v-if="appStore.hasBucket" />
@@ -27,7 +34,7 @@
         <p class="text-xs text-muted-foreground/40">
           made with <span class="text-red-500/40">❤️</span> by
           <a
-            href="https://github.com/cbarange"
+            href="https://cbarange.com"
             target="_blank"
             rel="noopener noreferrer"
             class="text-primary/50 hover:text-primary/70 hover:underline transition-colors"
@@ -49,6 +56,7 @@ import ProfileManager from '../components/ProfileManager.vue'
 import BucketList from '../components/BucketList.vue'
 import ObjectBrowser from '../components/ObjectBrowser.vue'
 import SettingsButton from '../components/SettingsButton.vue'
+import MetricsButton from '../components/MetricsButton.vue'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 const appStore = useAppStore()

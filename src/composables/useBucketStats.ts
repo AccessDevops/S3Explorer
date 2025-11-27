@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { calculateBucketStats } from '../services/tauri'
 import { logger } from '../utils/logger'
+import { getCacheMetrics } from './useCacheMetrics'
 
 /**
  * Bucket statistics stored in IndexedDB
@@ -157,13 +158,22 @@ export function useBucketStats() {
         if (cached) {
           const age = Date.now() - cached.lastUpdated
           if (age < cacheTTL) {
-            // Cache is still valid
+            // Cache HIT - record metrics
+            getCacheMetrics().recordCacheHit('bucketStats', {
+              profileId,
+              bucketName,
+              savedRequests: 1, // Avoids 1 full bucket scan
+            }).catch((e) => logger.error('Failed to record cache hit', e))
             return cached
           }
         }
       }
 
-      // Cache miss or expired - fetch from S3
+      // Cache MISS or expired - fetch from S3
+      getCacheMetrics().recordCacheMiss('bucketStats', {
+        profileId,
+        bucketName,
+      }).catch((e) => logger.error('Failed to record cache miss', e))
       loadingStats.value[cacheKey] = true
       statsProgress.value[cacheKey] = 0
 

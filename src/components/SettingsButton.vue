@@ -1,29 +1,30 @@
 <template>
-  <div class="p-4 border-t border-white/10">
-    <Button
-      variant="ghost"
-      class="w-full justify-start text-white/70 hover:text-white hover:bg-white/10"
-      @click="showSettingsModal = true"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="mr-2"
-      >
-        <path
-          d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-        />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-      {{ t('settings') }}
-    </Button>
+  <div>
+    <Tooltip :text="t('settings')" side="top">
+      <span class="inline-block w-full">
+        <Button
+          variant="ghost"
+          class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
+          @click="showSettingsModal = true"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="lucide lucide-settings"
+          >
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </Button>
+      </span>
+    </Tooltip>
 
     <!-- Settings Modal -->
     <Dialog v-model:open="showSettingsModal">
@@ -53,36 +54,6 @@
         <div class="flex-1 overflow-y-auto py-4 px-1">
           <!-- APPEARANCE TAB -->
           <div v-if="activeTab === 'appearance'" class="space-y-6">
-            <!-- Language Setting -->
-            <div class="space-y-3">
-              <div>
-                <label class="text-sm font-medium">{{ t('language') }}</label>
-                <p class="text-sm text-muted-foreground">{{ t('languageDescription') }}</p>
-              </div>
-
-              <div class="grid grid-cols-3 gap-3">
-                <button
-                  v-for="lang in languages"
-                  :key="lang.code"
-                  @click="changeLanguage(lang.code)"
-                  :class="[
-                    'p-3 rounded-lg border-2 transition-all text-left',
-                    settingsStore.language === lang.code
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50',
-                  ]"
-                >
-                  <div class="flex items-center gap-2">
-                    <div class="text-xl">{{ lang.flag }}</div>
-                    <div class="min-w-0">
-                      <div class="font-medium truncate text-sm">{{ lang.native }}</div>
-                      <div class="text-xs text-muted-foreground truncate">{{ lang.english }}</div>
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
             <!-- View Mode Setting -->
             <div class="space-y-3">
               <div>
@@ -242,102 +213,116 @@
             </div>
           </div>
 
+          <!-- LANGUAGE TAB -->
+          <div v-if="activeTab === 'language'" class="space-y-6">
+            <div class="space-y-3">
+              <div>
+                <label class="text-sm font-medium">{{ t('language') }}</label>
+                <p class="text-sm text-muted-foreground">{{ t('languageDescription') }}</p>
+              </div>
+
+              <div class="grid grid-cols-3 gap-3">
+                <button
+                  v-for="lang in languages"
+                  :key="lang.code"
+                  @click="changeLanguage(lang.code)"
+                  :class="[
+                    'p-3 rounded-lg border-2 transition-all text-left',
+                    settingsStore.language === lang.code
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50',
+                  ]"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="text-xl">{{ lang.flag }}</div>
+                    <div class="min-w-0">
+                      <div class="font-medium truncate text-sm">{{ lang.native }}</div>
+                      <div class="text-xs text-muted-foreground truncate">{{ lang.english }}</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- PERFORMANCE TAB -->
-          <div v-if="activeTab === 'performance'" class="space-y-6">
-            <!-- Batch Size Setting -->
-            <div class="space-y-3">
-              <div>
+          <div v-if="activeTab === 'performance'">
+            <div class="grid grid-cols-2 gap-x-6 gap-y-4">
+              <!-- Batch Size Setting -->
+              <div class="space-y-2">
                 <label class="text-sm font-medium">{{ t('batchSizeSetting') }}</label>
-                <p class="text-sm text-muted-foreground">{{ t('batchSizeDescription') }}</p>
-              </div>
-              <Input
-                type="number"
-                :model-value="settingsStore.batchSize"
-                @update:model-value="(val) => settingsStore.setBatchSize(Number(val))"
-                min="1"
-                max="500"
-                class="max-w-xs"
-              />
-            </div>
-
-            <!-- Max Concurrent Uploads Setting -->
-            <div class="space-y-3">
-              <div>
-                <label class="text-sm font-medium">{{ t('maxConcurrentUploads') }}</label>
-                <p class="text-sm text-muted-foreground">{{
-                  t('maxConcurrentUploadsDescription')
-                }}</p>
-              </div>
-              <Input
-                type="number"
-                :model-value="settingsStore.maxConcurrentUploads"
-                @update:model-value="(val) => settingsStore.setMaxConcurrentUploads(Number(val))"
-                min="1"
-                max="30"
-                class="max-w-xs"
-              />
-            </div>
-
-            <!-- Multipart Upload Threshold Setting -->
-            <div class="space-y-3">
-              <div>
-                <label class="text-sm font-medium">{{ t('multipartThreshold') }}</label>
-                <p class="text-sm text-muted-foreground">{{
-                  t('multipartThresholdDescription')
-                }}</p>
-              </div>
-              <div class="flex items-center gap-2 max-w-xs">
+                <p class="text-xs text-muted-foreground">{{ t('batchSizeDescription') }}</p>
                 <Input
                   type="number"
-                  :model-value="settingsStore.multipartThresholdMB"
-                  @update:model-value="(val) => settingsStore.setMultipartThresholdMB(Number(val))"
-                  min="5"
-                  max="1000"
-                  class="flex-1"
-                />
-                <span class="text-sm text-muted-foreground">MB</span>
-              </div>
-            </div>
-
-            <!-- Preview Warning Limit Setting -->
-            <div class="space-y-3">
-              <div>
-                <label class="text-sm font-medium">{{ t('previewWarningLimit') }}</label>
-                <p class="text-sm text-muted-foreground">{{
-                  t('previewWarningLimitDescription')
-                }}</p>
-              </div>
-              <div class="flex items-center gap-2 max-w-xs">
-                <Input
-                  type="number"
-                  :model-value="settingsStore.previewWarningLimitMB"
-                  @update:model-value="(val) => settingsStore.setPreviewWarningLimitMB(Number(val))"
-                  min="10"
+                  :model-value="settingsStore.batchSize"
+                  @update:model-value="(val) => settingsStore.setBatchSize(Number(val))"
+                  min="1"
                   max="500"
-                  class="flex-1"
                 />
-                <span class="text-sm text-muted-foreground">MB</span>
               </div>
-            </div>
 
-            <!-- Preview Max Limit Setting -->
-            <div class="space-y-3">
-              <div>
-                <label class="text-sm font-medium">{{ t('previewMaxLimit') }}</label>
-                <p class="text-sm text-muted-foreground">{{
-                  t('previewMaxLimitDescription')
-                }}</p>
-              </div>
-              <div class="flex items-center gap-2 max-w-xs">
+              <!-- Max Concurrent Uploads Setting -->
+              <div class="space-y-2">
+                <label class="text-sm font-medium">{{ t('maxConcurrentUploads') }}</label>
+                <p class="text-xs text-muted-foreground">{{ t('maxConcurrentUploadsDescription') }}</p>
                 <Input
                   type="number"
-                  :model-value="settingsStore.previewMaxLimitMB"
-                  @update:model-value="(val) => settingsStore.setPreviewMaxLimitMB(Number(val))"
-                  min="10"
-                  max="5000"
-                  class="flex-1"
+                  :model-value="settingsStore.maxConcurrentUploads"
+                  @update:model-value="(val) => settingsStore.setMaxConcurrentUploads(Number(val))"
+                  min="1"
+                  max="30"
                 />
-                <span class="text-sm text-muted-foreground">MB</span>
+              </div>
+
+              <!-- Multipart Upload Threshold Setting -->
+              <div class="space-y-2">
+                <label class="text-sm font-medium">{{ t('multipartThreshold') }}</label>
+                <p class="text-xs text-muted-foreground">{{ t('multipartThresholdDescription') }}</p>
+                <div class="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    :model-value="settingsStore.multipartThresholdMB"
+                    @update:model-value="(val) => settingsStore.setMultipartThresholdMB(Number(val))"
+                    min="5"
+                    max="1000"
+                    class="flex-1"
+                  />
+                  <span class="text-sm text-muted-foreground">MB</span>
+                </div>
+              </div>
+
+              <!-- Preview Warning Limit Setting -->
+              <div class="space-y-2">
+                <label class="text-sm font-medium">{{ t('previewWarningLimit') }}</label>
+                <p class="text-xs text-muted-foreground">{{ t('previewWarningLimitDescription') }}</p>
+                <div class="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    :model-value="settingsStore.previewWarningLimitMB"
+                    @update:model-value="(val) => settingsStore.setPreviewWarningLimitMB(Number(val))"
+                    min="10"
+                    max="500"
+                    class="flex-1"
+                  />
+                  <span class="text-sm text-muted-foreground">MB</span>
+                </div>
+              </div>
+
+              <!-- Preview Max Limit Setting -->
+              <div class="space-y-2">
+                <label class="text-sm font-medium">{{ t('previewMaxLimit') }}</label>
+                <p class="text-xs text-muted-foreground">{{ t('previewMaxLimitDescription') }}</p>
+                <div class="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    :model-value="settingsStore.previewMaxLimitMB"
+                    @update:model-value="(val) => settingsStore.setPreviewMaxLimitMB(Number(val))"
+                    min="10"
+                    max="5000"
+                    class="flex-1"
+                  />
+                  <span class="text-sm text-muted-foreground">MB</span>
+                </div>
               </div>
             </div>
           </div>
@@ -396,9 +381,19 @@
 
             <!-- All Indexes Section -->
             <div class="space-y-4">
-              <div>
-                <label class="text-sm font-medium">{{ t('allIndexes') }}</label>
-                <p class="text-sm text-muted-foreground">{{ t('allIndexesDescription') }}</p>
+              <div class="flex items-start justify-between">
+                <div>
+                  <label class="text-sm font-medium">{{ t('allIndexes') }}</label>
+                  <p class="text-sm text-muted-foreground">{{ t('allIndexesDescription') }}</p>
+                </div>
+                <Button
+                  v-if="allIndexes.length > 0"
+                  size="sm"
+                  variant="destructive"
+                  @click="handleDeleteAllIndexes"
+                >
+                  {{ t('deleteAllIndexes') }}
+                </Button>
               </div>
 
             <!-- Empty state -->
@@ -457,6 +452,26 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Delete All Indexes Confirmation Dialog -->
+    <Dialog v-model:open="showDeleteAllConfirm">
+      <DialogContent class="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ t('deleteAllIndexes') }}</DialogTitle>
+        </DialogHeader>
+        <p class="text-sm text-muted-foreground py-4">
+          {{ t('deleteAllIndexesConfirm') }}
+        </p>
+        <DialogFooter>
+          <Button variant="outline" @click="showDeleteAllConfirm = false">
+            {{ t('cancel') }}
+          </Button>
+          <Button variant="destructive" @click="confirmDeleteAllIndexes">
+            {{ t('delete') }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -472,6 +487,7 @@ import { useSearchIndex } from '../composables/useSearchIndex'
 import { useToast } from '../composables/useToast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Tooltip } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -487,11 +503,13 @@ const { t } = useI18n()
 const searchIndex = useSearchIndex()
 const toast = useToast()
 const showSettingsModal = ref(false)
+const showDeleteAllConfirm = ref(false)
 
 // Tabs
 const activeTab = ref('appearance')
 const tabs = [
   { id: 'appearance', label: t('appearance') },
+  { id: 'language', label: t('language') },
   { id: 'performance', label: t('performance') },
   { id: 'search', label: t('search') },
 ]
@@ -589,6 +607,28 @@ async function handleDeleteIndexFromTable(profileId: string, bucketName: string)
   } catch (error) {
     logger.error('Failed to delete index', error)
     toast.error(t('errorOccurred'))
+  }
+}
+
+// Delete all indexes - show confirmation dialog
+function handleDeleteAllIndexes() {
+  showDeleteAllConfirm.value = true
+}
+
+// Confirm delete all indexes
+async function confirmDeleteAllIndexes() {
+  try {
+    // Delete all indexes one by one
+    for (const index of allIndexes.value) {
+      await searchIndex.deleteIndex(index.profileId, index.bucketName)
+    }
+    // Reload the table
+    await loadAllIndexes()
+    showDeleteAllConfirm.value = false
+  } catch (error) {
+    logger.error('Failed to delete all indexes', error)
+    toast.error(t('errorOccurred'))
+    showDeleteAllConfirm.value = false
   }
 }
 </script>

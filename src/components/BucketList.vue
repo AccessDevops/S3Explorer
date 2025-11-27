@@ -255,6 +255,7 @@ import { createBucket, estimateBucketStats } from '../services/tauri'
 import { formatSize, formatDate } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { useBucketStats } from '../composables/useBucketStats'
+import { getCacheMetrics } from '../composables/useCacheMetrics'
 
 const appStore = useAppStore()
 const settingsStore = useSettingsStore()
@@ -397,7 +398,12 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
       if (cached) {
         const age = Date.now() - cached.lastUpdated
         if (age < statsCacheTTL.value) {
-          // Cache valid, use it
+          // Cache HIT - record metrics
+          getCacheMetrics().recordCacheHit('bucketStats', {
+            profileId: appStore.currentProfile.id,
+            bucketName,
+            savedRequests: 1,
+          }).catch((e) => logger.error('Failed to record cache hit', e))
           bucketStats.value[bucketName] = cached
           bucketStatsIsEstimate.value[bucketName] = false // Cached stats are always accurate
           return
@@ -405,7 +411,7 @@ async function loadBucketStats(bucketName: string, forceRefresh = false) {
       }
     }
 
-    // Cache miss or force refresh - load from S3
+    // Cache MISS or force refresh - load from S3
     const stats = await bucketStatsComposable.loadBucketStats(
       appStore.currentProfile.id,
       bucketName,

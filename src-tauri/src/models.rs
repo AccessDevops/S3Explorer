@@ -364,3 +364,209 @@ pub struct DeleteObjectError {
     pub code: Option<String>,
     pub message: Option<String>,
 }
+
+// ============================================================================
+// Metrics Types
+// ============================================================================
+
+/// S3 operation type for metrics tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum S3Operation {
+    // Bucket operations
+    ListBuckets,
+    CreateBucket,
+    GetBucketAcl,
+    // Object listing
+    ListObjectsV2,
+    ListObjectVersions,
+    // Object CRUD
+    GetObject,
+    PutObject,
+    DeleteObject,
+    DeleteObjects,
+    CopyObject,
+    HeadObject,
+    // Multipart upload
+    CreateMultipartUpload,
+    UploadPart,
+    CompleteMultipartUpload,
+    AbortMultipartUpload,
+    // Tags & Metadata
+    GetObjectTagging,
+    PutObjectTagging,
+    DeleteObjectTagging,
+    // Local operations (no S3 API call)
+    GeneratePresignedUrl,
+}
+
+/// Request category for cost calculation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RequestCategory {
+    GET,
+    PUT,
+    LIST,
+    DELETE,
+    LOCAL,
+}
+
+/// Error category for metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum S3ErrorCategory {
+    ConnectionTimeout,
+    ReadTimeout,
+    NetworkError,
+    InvalidCredentials,
+    ExpiredCredentials,
+    AccessDenied,
+    BucketNotFound,
+    ObjectNotFound,
+    BucketAlreadyExists,
+    InvalidBucketName,
+    InvalidObjectKey,
+    RequestTooLarge,
+    ServiceUnavailable,
+    InternalError,
+    SlowDown,
+    MultipartUploadFailed,
+    Unknown,
+}
+
+/// S3 metrics event emitted to frontend
+#[derive(Debug, Clone, Serialize)]
+pub struct S3MetricsEvent {
+    pub id: String,
+    pub timestamp: i64,
+    pub operation: S3Operation,
+    pub category: RequestCategory,
+
+    pub profile_id: Option<String>,
+    pub profile_name: Option<String>,
+    pub bucket_name: Option<String>,
+    pub object_key: Option<String>,
+
+    pub duration_ms: u64,
+    pub bytes_transferred: Option<u64>,
+    pub objects_affected: Option<u32>,
+
+    pub success: bool,
+    pub error_category: Option<S3ErrorCategory>,
+    pub error_message: Option<String>,
+}
+
+impl S3MetricsEvent {
+    /// Create a new metrics event builder
+    pub fn new(operation: S3Operation, category: RequestCategory) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            operation,
+            category,
+            profile_id: None,
+            profile_name: None,
+            bucket_name: None,
+            object_key: None,
+            duration_ms: 0,
+            bytes_transferred: None,
+            objects_affected: None,
+            success: true,
+            error_category: None,
+            error_message: None,
+        }
+    }
+
+    /// Set profile info
+    pub fn with_profile(mut self, profile_id: &str, profile_name: &str) -> Self {
+        self.profile_id = Some(profile_id.to_string());
+        self.profile_name = Some(profile_name.to_string());
+        self
+    }
+
+    /// Set bucket name
+    pub fn with_bucket(mut self, bucket: &str) -> Self {
+        self.bucket_name = Some(bucket.to_string());
+        self
+    }
+
+    /// Set object key (truncated to 200 chars)
+    pub fn with_object_key(mut self, key: &str) -> Self {
+        self.object_key = Some(if key.len() > 200 {
+            format!("{}...", &key[..197])
+        } else {
+            key.to_string()
+        });
+        self
+    }
+
+    /// Set duration
+    pub fn with_duration(mut self, duration_ms: u64) -> Self {
+        self.duration_ms = duration_ms;
+        self
+    }
+
+    /// Set bytes transferred
+    pub fn with_bytes(mut self, bytes: u64) -> Self {
+        self.bytes_transferred = Some(bytes);
+        self
+    }
+
+    /// Set objects affected count
+    pub fn with_objects_affected(mut self, count: u32) -> Self {
+        self.objects_affected = Some(count);
+        self
+    }
+
+    /// Mark as failed with error details
+    pub fn with_error(mut self, category: S3ErrorCategory, message: &str) -> Self {
+        self.success = false;
+        self.error_category = Some(category);
+        self.error_message = Some(if message.len() > 500 {
+            format!("{}...", &message[..497])
+        } else {
+            message.to_string()
+        });
+        self
+    }
+}
+
+/// Categorize an S3 error into a metrics category
+pub fn categorize_s3_error(error_str: &str) -> S3ErrorCategory {
+    let error_lower = error_str.to_lowercase();
+
+    if error_lower.contains("timeout") {
+        if error_lower.contains("connect") {
+            S3ErrorCategory::ConnectionTimeout
+        } else {
+            S3ErrorCategory::ReadTimeout
+        }
+    } else if error_lower.contains("network") || error_lower.contains("connection") {
+        S3ErrorCategory::NetworkError
+    } else if error_lower.contains("invalid") && error_lower.contains("credentials") {
+        S3ErrorCategory::InvalidCredentials
+    } else if error_lower.contains("expired") {
+        S3ErrorCategory::ExpiredCredentials
+    } else if error_lower.contains("access denied") || error_lower.contains("forbidden") {
+        S3ErrorCategory::AccessDenied
+    } else if error_lower.contains("nosuchbucket") || error_lower.contains("bucket") && error_lower.contains("not found") {
+        S3ErrorCategory::BucketNotFound
+    } else if error_lower.contains("nosuchkey") || error_lower.contains("not found") {
+        S3ErrorCategory::ObjectNotFound
+    } else if error_lower.contains("bucketalreadyexists") || error_lower.contains("already owned") {
+        S3ErrorCategory::BucketAlreadyExists
+    } else if error_lower.contains("invalid") && error_lower.contains("bucket") {
+        S3ErrorCategory::InvalidBucketName
+    } else if error_lower.contains("invalid") && error_lower.contains("key") {
+        S3ErrorCategory::InvalidObjectKey
+    } else if error_lower.contains("too large") || error_lower.contains("entity too large") {
+        S3ErrorCategory::RequestTooLarge
+    } else if error_lower.contains("service unavailable") || error_lower.contains("503") {
+        S3ErrorCategory::ServiceUnavailable
+    } else if error_lower.contains("internal") || error_lower.contains("500") {
+        S3ErrorCategory::InternalError
+    } else if error_lower.contains("slowdown") || error_lower.contains("rate") {
+        S3ErrorCategory::SlowDown
+    } else if error_lower.contains("multipart") {
+        S3ErrorCategory::MultipartUploadFailed
+    } else {
+        S3ErrorCategory::Unknown
+    }
+}

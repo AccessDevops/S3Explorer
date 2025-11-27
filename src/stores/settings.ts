@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { S3Provider, S3Pricing } from '@/types/metrics'
+import { PROVIDER_PRICING } from '@/types/metrics'
 
 export type Language = 'en' | 'zh' | 'hi' | 'es' | 'fr' | 'ar' | 'bn' | 'pt' | 'id' | 'ro'
 export type SearchMode = 'local' | 'global'
@@ -24,6 +26,10 @@ export const useSettingsStore = defineStore('settings', () => {
   const previewWarningLimitMB = ref(10) // MB - files larger than this show warning before loading
   const previewMaxLimitMB = ref(80) // MB - files larger than this cannot be previewed
   const editorTheme = ref<EditorTheme>('system') // editor theme - dark, light, high-contrast, or system
+
+  // Metrics pricing settings
+  const metricsProvider = ref<S3Provider>('aws')
+  const customPricing = ref<S3Pricing>({ ...PROVIDER_PRICING.custom })
 
   // Track system theme preference reactively
   const systemPrefersDark = ref(false)
@@ -132,6 +138,27 @@ export const useSettingsStore = defineStore('settings', () => {
     if (savedEditorTheme === 'dark' || savedEditorTheme === 'light' || savedEditorTheme === 'high-contrast' || savedEditorTheme === 'system') {
       editorTheme.value = savedEditorTheme
     }
+
+    // Load metrics pricing settings
+    const savedMetricsProvider = localStorage.getItem('app-metricsProvider') as S3Provider | null
+    if (savedMetricsProvider && savedMetricsProvider in PROVIDER_PRICING) {
+      metricsProvider.value = savedMetricsProvider
+    }
+
+    const savedCustomPricing = localStorage.getItem('app-customPricing')
+    if (savedCustomPricing) {
+      try {
+        const parsed = JSON.parse(savedCustomPricing)
+        if (typeof parsed.getPerThousand === 'number' &&
+            typeof parsed.putPerThousand === 'number' &&
+            typeof parsed.listPerThousand === 'number' &&
+            typeof parsed.deletePerThousand === 'number') {
+          customPricing.value = parsed
+        }
+      } catch {
+        // Invalid JSON, use default
+      }
+    }
   }
 
   // Save language to localStorage
@@ -231,6 +258,26 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-editorTheme', theme)
   }
 
+  // Save metrics provider to localStorage
+  const setMetricsProvider = (provider: S3Provider) => {
+    metricsProvider.value = provider
+    localStorage.setItem('app-metricsProvider', provider)
+  }
+
+  // Save custom pricing to localStorage
+  const setCustomPricing = (pricing: S3Pricing) => {
+    customPricing.value = { ...pricing }
+    localStorage.setItem('app-customPricing', JSON.stringify(pricing))
+  }
+
+  // Get current pricing based on provider selection
+  const getCurrentPricing = computed<S3Pricing>(() => {
+    if (metricsProvider.value === 'custom') {
+      return customPricing.value
+    }
+    return PROVIDER_PRICING[metricsProvider.value]
+  })
+
   // Computed property to get Monaco theme based on editor theme setting
   // This reactively detects system theme when 'system' is selected
   const getMonacoTheme = computed<MonacoTheme>(() => {
@@ -273,5 +320,11 @@ export const useSettingsStore = defineStore('settings', () => {
     setPreviewMaxLimitMB,
     setEditorTheme,
     getMonacoTheme,
+    // Metrics pricing
+    metricsProvider,
+    customPricing,
+    setMetricsProvider,
+    setCustomPricing,
+    getCurrentPricing,
   }
 })

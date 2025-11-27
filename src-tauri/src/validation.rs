@@ -126,6 +126,7 @@ pub fn validate_object_key(key: &str) -> Result<(), AppError> {
 /// - Must be a valid URL format
 /// - Must use http or https protocol
 /// - Warns (but allows) HTTP for non-localhost endpoints
+#[allow(dead_code)]
 pub fn validate_endpoint(endpoint: &str) -> Result<Option<String>, AppError> {
     let endpoint = endpoint.trim();
 

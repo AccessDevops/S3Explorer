@@ -674,7 +674,7 @@
     <!-- Selection Action Bar -->
     <div
       v-if="selectedItems.size > 0"
-      class="border-t bg-primary/10 px-4 py-3 flex items-center justify-between"
+      class="border-t bg-primary/10 px-4 py-3 flex items-center justify-between select-none"
     >
       <div class="flex items-center gap-3">
         <span class="font-medium">
@@ -2557,6 +2557,9 @@ watch(searchQuery, async (query) => {
       logger.debug('Using live search (no valid index)')
       useIndexForSearch.value = false
       searchAbortController.value = new AbortController()
+
+      // Record cache miss - search is falling back to S3
+      searchIndex.recordSearchCacheMiss(profileId, bucket)
 
       let continuationToken: string | undefined = undefined
       const MAX_SEARCH_RESULTS = 10000 // Limit to prevent memory overflow

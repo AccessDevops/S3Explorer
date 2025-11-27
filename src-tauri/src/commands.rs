@@ -1,3 +1,4 @@
+use crate::metrics::MetricsContext;
 use crate::models::*;
 use crate::profiles::ProfileStore;
 use crate::s3_adapter::S3Adapter;
@@ -57,38 +58,76 @@ pub async fn delete_profile(profile_id: String, state: State<'_, AppState>) -> R
 
 /// Test a connection profile
 #[tauri::command]
-pub async fn test_connection(profile: Profile) -> Result<TestConnectionResponse, String> {
-    S3Adapter::test_connection_with_profile(&profile)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn test_connection(
+    app: AppHandle,
+    profile: Profile,
+) -> Result<TestConnectionResponse, String> {
+    let mut ctx = MetricsContext::new(S3Operation::ListBuckets, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name);
+
+    let result = S3Adapter::test_connection_with_profile(&profile).await;
+
+    match &result {
+        Ok(response) => {
+            if response.success {
+                if let Some(count) = response.bucket_count {
+                    ctx.set_objects_affected(count as u32);
+                }
+                ctx.emit_success(&app);
+            } else {
+                ctx.emit_error(&app, &response.message);
+            }
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 /// List buckets for a profile
 #[tauri::command]
 pub async fn list_buckets(
+    app: AppHandle,
     profile_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<Bucket>, String> {
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
-    }; // Lock is dropped here
+    };
+
+    let mut ctx = MetricsContext::new(S3Operation::ListBuckets, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name);
 
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter.list_buckets().await.map_err(|e| e.to_string())
+    let result = adapter.list_buckets().await;
+
+    match &result {
+        Ok(buckets) => {
+            ctx.set_objects_affected(buckets.len() as u32);
+            ctx.emit_success(&app);
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Create a new bucket
 #[tauri::command]
 pub async fn create_bucket(
+    app: AppHandle,
     profile_id: String,
     bucket_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Validate bucket name
     validation::validate_bucket_name(&bucket_name).map_err(|e| e.to_string())?;
 
     let profile = {
@@ -96,19 +135,24 @@ pub async fn create_bucket(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::CreateBucket, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket_name);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .create_bucket(&bucket_name)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.create_bucket(&bucket_name).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Get bucket ACL (Public/Private)
 #[tauri::command]
 pub async fn get_bucket_acl(
+    app: AppHandle,
     profile_id: String,
     bucket_name: String,
     state: State<'_, AppState>,
@@ -118,19 +162,25 @@ pub async fn get_bucket_acl(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::GetBucketAcl, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket_name);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .get_bucket_acl(&bucket_name)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.get_bucket_acl(&bucket_name).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Calculate bucket statistics (size and count of all objects)
+/// Note: This makes multiple ListObjectsV2 calls (one per 1000 objects)
 #[tauri::command]
 pub async fn calculate_bucket_stats(
+    app: AppHandle,
     profile_id: String,
     bucket_name: String,
     state: State<'_, AppState>,
@@ -140,20 +190,47 @@ pub async fn calculate_bucket_stats(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let start_time = std::time::Instant::now();
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .calculate_bucket_stats(&bucket_name)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.calculate_bucket_stats(&bucket_name).await;
+
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+
+    match &result {
+        Ok((_size, count, request_count)) => {
+            // Emit one metric per API request made
+            let avg_duration = duration_ms / (*request_count as u64).max(1);
+            let objects_per_request = (*count as u32) / (*request_count).max(1);
+
+            for _ in 0..*request_count {
+                let event = S3MetricsEvent::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+                    .with_duration(avg_duration)
+                    .with_profile(&profile.id, &profile.name)
+                    .with_bucket(&bucket_name)
+                    .with_objects_affected(objects_per_request);
+                crate::metrics::emit_metrics(&app, event);
+            }
+        }
+        Err(e) => {
+            let ctx = MetricsContext::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket_name);
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map(|(size, count, _)| (size, count)).map_err(|e| e.to_string())
 }
 
 /// Estimate bucket statistics (fast - only first 1000 objects)
 /// Returns (size, count, is_estimate)
 #[tauri::command]
 pub async fn estimate_bucket_stats(
+    app: AppHandle,
     profile_id: String,
     bucket_name: String,
     state: State<'_, AppState>,
@@ -163,19 +240,34 @@ pub async fn estimate_bucket_stats(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let mut ctx = MetricsContext::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket_name);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .estimate_bucket_stats(&bucket_name)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.estimate_bucket_stats(&bucket_name).await;
+
+    match &result {
+        Ok((size, count, _)) => {
+            ctx.set_bytes(*size as u64);
+            ctx.set_objects_affected(*count as u32);
+            ctx.emit_success(&app);
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 /// List objects in a bucket
 #[tauri::command]
 pub async fn list_objects(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     prefix: Option<String>,
@@ -189,11 +281,15 @@ pub async fn list_objects(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let mut ctx = MetricsContext::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
+    let result = adapter
         .list_objects(
             &bucket,
             prefix.as_deref(),
@@ -201,13 +297,25 @@ pub async fn list_objects(
             max_keys,
             use_delimiter.unwrap_or(true),
         )
-        .await
-        .map_err(|e| e.to_string())
+        .await;
+
+    match &result {
+        Ok(response) => {
+            ctx.set_objects_affected(response.objects.len() as u32);
+            ctx.emit_success(&app);
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Get an object's content
 #[tauri::command]
 pub async fn get_object(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -218,19 +326,34 @@ pub async fn get_object(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let mut ctx = MetricsContext::new(S3Operation::GetObject, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .get_object(&bucket, &key)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.get_object(&bucket, &key).await;
+
+    match &result {
+        Ok(response) => {
+            ctx.set_bytes(response.size as u64);
+            ctx.emit_success(&app);
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Upload an object
 #[tauri::command]
 pub async fn put_object(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -238,7 +361,6 @@ pub async fn put_object(
     content_type: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Validate inputs
     validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
     validation::validate_object_key(&key).map_err(|e| e.to_string())?;
 
@@ -247,19 +369,27 @@ pub async fn put_object(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let content_len = content.len() as u64;
+    let mut ctx = MetricsContext::new(S3Operation::PutObject, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+    ctx.set_bytes(content_len);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .put_object(&bucket, &key, content, content_type)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.put_object(&bucket, &key, content, content_type).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Delete an object
 #[tauri::command]
 pub async fn delete_object(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -270,19 +400,25 @@ pub async fn delete_object(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::DeleteObject, RequestCategory::DELETE)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .delete_object(&bucket, &key)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.delete_object(&bucket, &key).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Copy an object
 #[tauri::command]
 pub async fn copy_object(
+    app: AppHandle,
     profile_id: String,
     source_bucket: String,
     source_key: String,
@@ -295,19 +431,27 @@ pub async fn copy_object(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::CopyObject, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&dest_bucket)
+        .with_object_key(&dest_key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
+    let result = adapter
         .copy_object(&source_bucket, &source_key, &dest_bucket, &dest_key)
-        .await
-        .map_err(|e| e.to_string())
+        .await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Change the content-type of an object (copies object to itself with new metadata)
 #[tauri::command]
 pub async fn change_content_type(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -319,25 +463,30 @@ pub async fn change_content_type(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::CopyObject, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .change_content_type(&bucket, &key, &new_content_type)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.change_content_type(&bucket, &key, &new_content_type).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Create a folder (empty object with trailing slash)
 #[tauri::command]
 pub async fn create_folder(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     folder_path: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Validate inputs
     validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
     let validated_path = validation::validate_folder_path(&folder_path).map_err(|e| e.to_string())?;
 
@@ -346,19 +495,25 @@ pub async fn create_folder(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::PutObject, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&validated_path);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .create_folder(&bucket, &validated_path)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.create_folder(&bucket, &validated_path).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
-/// Generate a presigned URL
+/// Generate a presigned URL (local operation, no S3 API call)
 #[tauri::command]
 pub async fn generate_presigned_url(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -366,7 +521,6 @@ pub async fn generate_presigned_url(
     expires_in_secs: u64,
     state: State<'_, AppState>,
 ) -> Result<PresignedUrlResponse, String> {
-    // Validate inputs
     validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
     validation::validate_object_key(&key).map_err(|e| e.to_string())?;
     validation::validate_presigned_url_expiry(expires_in_secs).map_err(|e| e.to_string())?;
@@ -376,15 +530,22 @@ pub async fn generate_presigned_url(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::GeneratePresignedUrl, RequestCategory::LOCAL)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    let url = adapter
+    let result = adapter
         .generate_presigned_url(&bucket, &key, &method, expires_in_secs)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
 
+    ctx.emit_result(&app, &result);
+
+    let url = result.map_err(|e| e.to_string())?;
     Ok(PresignedUrlResponse {
         url,
         expires_in_secs,
@@ -392,8 +553,10 @@ pub async fn generate_presigned_url(
 }
 
 /// Calculate folder size by summing ALL objects in the prefix (including all subdirectories recursively)
+/// Note: This makes multiple ListObjectsV2 calls (one per 1000 objects)
 #[tauri::command]
 pub async fn calculate_folder_size(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     prefix: String,
@@ -404,19 +567,47 @@ pub async fn calculate_folder_size(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let start_time = std::time::Instant::now();
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .calculate_folder_size(&bucket, &prefix)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.calculate_folder_size(&bucket, &prefix).await;
+
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+
+    match &result {
+        Ok((_size, request_count)) => {
+            // Emit one metric per API request made
+            let avg_duration = duration_ms / (*request_count as u64).max(1);
+
+            for _ in 0..*request_count {
+                let event = S3MetricsEvent::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+                    .with_duration(avg_duration)
+                    .with_profile(&profile.id, &profile.name)
+                    .with_bucket(&bucket)
+                    .with_object_key(&prefix);
+                crate::metrics::emit_metrics(&app, event);
+            }
+        }
+        Err(e) => {
+            let ctx = MetricsContext::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&prefix);
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map(|(size, _)| size).map_err(|e| e.to_string())
 }
 
 /// Delete a folder and all its contents
+/// Note: This makes multiple ListObjectsV2 and DeleteObjects calls
 #[tauri::command]
 pub async fn delete_folder(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     prefix: String,
@@ -427,19 +618,59 @@ pub async fn delete_folder(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let start_time = std::time::Instant::now();
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .delete_folder(&bucket, &prefix)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.delete_folder(&bucket, &prefix).await;
+
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+
+    match &result {
+        Ok((deleted_count, list_request_count, delete_request_count)) => {
+            let total_requests = list_request_count + delete_request_count;
+            let avg_duration = duration_ms / (total_requests as u64).max(1);
+
+            // Emit metrics for ListObjectsV2 calls
+            for _ in 0..*list_request_count {
+                let event = S3MetricsEvent::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
+                    .with_duration(avg_duration)
+                    .with_profile(&profile.id, &profile.name)
+                    .with_bucket(&bucket)
+                    .with_object_key(&prefix);
+                crate::metrics::emit_metrics(&app, event);
+            }
+
+            // Emit metrics for DeleteObjects calls
+            let objects_per_delete = (*deleted_count as u32) / (*delete_request_count).max(1);
+            for _ in 0..*delete_request_count {
+                let event = S3MetricsEvent::new(S3Operation::DeleteObjects, RequestCategory::DELETE)
+                    .with_duration(avg_duration)
+                    .with_profile(&profile.id, &profile.name)
+                    .with_bucket(&bucket)
+                    .with_object_key(&prefix)
+                    .with_objects_affected(objects_per_delete);
+                crate::metrics::emit_metrics(&app, event);
+            }
+        }
+        Err(e) => {
+            let ctx = MetricsContext::new(S3Operation::DeleteObjects, RequestCategory::DELETE)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&prefix);
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map(|(count, _, _)| count).map_err(|e| e.to_string())
 }
 
 /// List all versions of an object
 #[tauri::command]
 pub async fn list_object_versions(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -450,14 +681,28 @@ pub async fn list_object_versions(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let mut ctx = MetricsContext::new(S3Operation::ListObjectVersions, RequestCategory::LIST)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .list_object_versions(&bucket, &key)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.list_object_versions(&bucket, &key).await;
+
+    match &result {
+        Ok(response) => {
+            ctx.set_objects_affected(response.versions.len() as u32);
+            ctx.emit_success(&app);
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Get file metadata (size) without reading the entire file
@@ -709,22 +954,40 @@ async fn perform_upload(
             return Err("Upload cancelled".to_string());
         }
 
+        // Metrics for simple upload
+        let mut ctx = MetricsContext::new(S3Operation::PutObject, RequestCategory::PUT)
+            .with_profile(&profile.id, &profile.name)
+            .with_bucket(&bucket)
+            .with_object_key(&key);
+        ctx.set_bytes(file_size);
+
         // Upload
-        adapter
+        let result = adapter
             .put_object(&bucket, &key, buffer, content_type)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string());
+
+        ctx.emit_result(&app, &result);
+        result?;
 
         Ok(())
     } else {
         // Multipart upload for large files
         let total_parts = file_size.div_ceil(PART_SIZE) as i32;
 
-        // Start multipart upload
-        let init_response = adapter
+        // Start multipart upload with metrics
+        let init_ctx = MetricsContext::new(S3Operation::CreateMultipartUpload, RequestCategory::PUT)
+            .with_profile(&profile.id, &profile.name)
+            .with_bucket(&bucket)
+            .with_object_key(&key);
+
+        let init_result = adapter
             .multipart_upload_start(&bucket, &key, content_type)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string());
+
+        init_ctx.emit_result(&app, &init_result);
+        let init_response = init_result?;
 
         let s3_upload_id = init_response.upload_id.clone();
 
@@ -735,10 +998,18 @@ async fn perform_upload(
         for part_number in 1..=total_parts {
             // Check for cancellation before each part
             if cancel_rx.try_recv().is_ok() {
-                // Abort the multipart upload
-                let _ = adapter
+                // Abort the multipart upload with metrics
+                let abort_ctx = MetricsContext::new(S3Operation::AbortMultipartUpload, RequestCategory::PUT)
+                    .with_profile(&profile.id, &profile.name)
+                    .with_bucket(&bucket)
+                    .with_object_key(&key);
+
+                let abort_result = adapter
                     .multipart_upload_abort(&bucket, &key, &s3_upload_id)
-                    .await;
+                    .await
+                    .map_err(|e| e.to_string());
+
+                abort_ctx.emit_result(&app, &abort_result);
                 return Err("Upload cancelled".to_string());
             }
 
@@ -757,11 +1028,20 @@ async fn perform_upload(
             file.read_exact(&mut buffer)
                 .map_err(|e| format!("Failed to read file chunk: {}", e))?;
 
-            // Upload part
-            let part_response = adapter
+            // Upload part with metrics
+            let mut part_ctx = MetricsContext::new(S3Operation::UploadPart, RequestCategory::PUT)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&key);
+            part_ctx.set_bytes(length);
+
+            let part_result = adapter
                 .multipart_upload_part(&bucket, &key, &s3_upload_id, part_number, buffer)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.to_string());
+
+            part_ctx.emit_result(&app, &part_result);
+            let part_response = part_result?;
 
             completed_parts.push(CompletedPart {
                 part_number,
@@ -788,11 +1068,19 @@ async fn perform_upload(
             );
         }
 
-        // Complete multipart upload
-        adapter
+        // Complete multipart upload with metrics
+        let complete_ctx = MetricsContext::new(S3Operation::CompleteMultipartUpload, RequestCategory::PUT)
+            .with_profile(&profile.id, &profile.name)
+            .with_bucket(&bucket)
+            .with_object_key(&key);
+
+        let complete_result = adapter
             .multipart_upload_complete(&bucket, &key, &s3_upload_id, completed_parts)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string());
+
+        complete_ctx.emit_result(&app, &complete_result);
+        complete_result?;
 
         Ok(())
     }
@@ -801,6 +1089,7 @@ async fn perform_upload(
 /// Get object tags
 #[tauri::command]
 pub async fn get_object_tags(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -811,21 +1100,35 @@ pub async fn get_object_tags(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let mut ctx = MetricsContext::new(S3Operation::GetObjectTagging, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    let tags = adapter
-        .get_object_tagging(&bucket, &key)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = adapter.get_object_tagging(&bucket, &key).await;
 
+    match &result {
+        Ok(tags) => {
+            ctx.set_objects_affected(tags.len() as u32);
+            ctx.emit_success(&app);
+        }
+        Err(e) => {
+            ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    let tags = result.map_err(|e| e.to_string())?;
     Ok(GetObjectTagsResponse { tags })
 }
 
 /// Put object tags
 #[tauri::command]
 pub async fn put_object_tags(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -837,21 +1140,25 @@ pub async fn put_object_tags(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::PutObjectTagging, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .put_object_tagging(&bucket, &key, tags)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = adapter.put_object_tagging(&bucket, &key, tags).await;
+    ctx.emit_result(&app, &result);
 
-    Ok(())
+    result.map_err(|e| e.to_string())
 }
 
 /// Delete object tags
 #[tauri::command]
 pub async fn delete_object_tags(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -862,21 +1169,25 @@ pub async fn delete_object_tags(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::DeleteObjectTagging, RequestCategory::DELETE)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .delete_object_tagging(&bucket, &key)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = adapter.delete_object_tagging(&bucket, &key).await;
+    ctx.emit_result(&app, &result);
 
-    Ok(())
+    result.map_err(|e| e.to_string())
 }
 
 /// Get object metadata (HTTP headers)
 #[tauri::command]
 pub async fn get_object_metadata(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -887,20 +1198,26 @@ pub async fn get_object_metadata(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::HeadObject, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
-        .get_object_metadata(&bucket, &key)
-        .await
-        .map_err(|e| e.to_string())
+    let result = adapter.get_object_metadata(&bucket, &key).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
 }
 
 /// Update object metadata (HTTP headers)
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn update_object_metadata(
+    app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
@@ -918,11 +1235,16 @@ pub async fn update_object_metadata(
         store.get(&profile_id).map_err(|e| e.to_string())?
     };
 
+    let ctx = MetricsContext::new(S3Operation::CopyObject, RequestCategory::PUT)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
     let adapter = S3Adapter::from_profile(&profile)
         .await
         .map_err(|e| e.to_string())?;
 
-    adapter
+    let result = adapter
         .update_object_metadata(
             &bucket,
             &key,
@@ -934,6 +1256,8 @@ pub async fn update_object_metadata(
             expires,
             metadata,
         )
-        .await
-        .map_err(|e| e.to_string())
+        .await;
+
+    ctx.emit_result(&app, &result);
+    result.map_err(|e| e.to_string())
 }

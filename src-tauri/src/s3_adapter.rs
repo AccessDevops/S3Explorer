@@ -230,9 +230,11 @@ impl S3Adapter {
     }
 
     /// Calculate bucket statistics (total size and count) by listing ALL objects without delimiter
-    pub async fn calculate_bucket_stats(&self, bucket_name: &str) -> Result<(i64, i64), AppError> {
+    /// Returns (total_size, total_count, request_count) where request_count is the number of API calls made
+    pub async fn calculate_bucket_stats(&self, bucket_name: &str) -> Result<(i64, i64, u32), AppError> {
         let mut total_size: i64 = 0;
         let mut total_count: i64 = 0;
+        let mut request_count: u32 = 0;
         let mut continuation_token: Option<String> = None;
 
         // Paginate through ALL objects in the bucket (no delimiter)
@@ -252,6 +254,8 @@ impl S3Adapter {
                 .await
                 .map_err(|e| AppError::S3Error(format!("Failed to list objects: {}", e)))?;
 
+            request_count += 1;
+
             // Sum up object sizes (skip folder markers)
             for obj in output.contents() {
                 if let Some(key) = obj.key() {
@@ -269,7 +273,7 @@ impl S3Adapter {
             }
         }
 
-        Ok((total_size, total_count))
+        Ok((total_size, total_count, request_count))
     }
 
     /// Estimate bucket statistics by listing only the first 1000 objects
@@ -311,12 +315,14 @@ impl S3Adapter {
 
     /// Calculate folder size by listing ALL objects with the given prefix (including all subdirectories recursively)
     /// This method skips folder markers (objects ending with '/') as they are zero-byte placeholders
+    /// Returns (total_size, request_count) where request_count is the number of API calls made
     pub async fn calculate_folder_size(
         &self,
         bucket_name: &str,
         prefix: &str,
-    ) -> Result<i64, AppError> {
+    ) -> Result<(i64, u32), AppError> {
         let mut total_size: i64 = 0;
+        let mut request_count: u32 = 0;
         let mut continuation_token: Option<String> = None;
 
         // Paginate through ALL objects with the given prefix (no delimiter = recursive)
@@ -337,6 +343,8 @@ impl S3Adapter {
                 .await
                 .map_err(|e| AppError::S3Error(format!("Failed to list objects: {}", e)))?;
 
+            request_count += 1;
+
             // Sum up object sizes (skip folder markers)
             for obj in output.contents() {
                 if let Some(key) = obj.key() {
@@ -353,7 +361,7 @@ impl S3Adapter {
             }
         }
 
-        Ok(total_size)
+        Ok((total_size, request_count))
     }
 
     /// List objects in a bucket with optional prefix
@@ -655,7 +663,8 @@ impl S3Adapter {
     /// Delete a folder and all its contents using batch delete (DeleteObjects API)
     /// This is ~99% more efficient than deleting objects one by one
     /// S3 DeleteObjects supports up to 1000 objects per request
-    pub async fn delete_folder(&self, bucket: &str, prefix: &str) -> Result<i64, AppError> {
+    /// Returns (deleted_count, list_request_count, delete_request_count)
+    pub async fn delete_folder(&self, bucket: &str, prefix: &str) -> Result<(i64, u32, u32), AppError> {
         let folder_prefix = if prefix.ends_with('/') {
             prefix.to_string()
         } else {
@@ -664,6 +673,8 @@ impl S3Adapter {
 
         let mut deleted_count: i64 = 0;
         let mut total_errors: i64 = 0;
+        let mut list_request_count: u32 = 0;
+        let mut delete_request_count: u32 = 0;
         let mut continuation_token: Option<String> = None;
 
         // Paginate through all objects in the folder (without delimiter to get all nested objects)
@@ -678,12 +689,15 @@ impl S3Adapter {
                 )
                 .await?;
 
+            list_request_count += 1;
+
             // Collect keys for batch deletion
             let keys: Vec<String> = response.objects.iter().map(|obj| obj.key.clone()).collect();
 
             if !keys.is_empty() {
                 // Use batch delete (1 request instead of N requests)
                 let delete_result = self.delete_objects_batch(bucket, keys).await?;
+                delete_request_count += 1;
                 deleted_count += delete_result.deleted_count as i64;
                 total_errors += delete_result.error_count as i64;
 
@@ -712,6 +726,7 @@ impl S3Adapter {
         let _ = self
             .delete_objects_batch(bucket, vec![folder_prefix])
             .await;
+        delete_request_count += 1;
 
         // Return total deleted count (errors are logged but don't fail the operation)
         if total_errors > 0 {
@@ -722,7 +737,7 @@ impl S3Adapter {
             );
         }
 
-        Ok(deleted_count)
+        Ok((deleted_count, list_request_count, delete_request_count))
     }
 
     /// List all versions of an object

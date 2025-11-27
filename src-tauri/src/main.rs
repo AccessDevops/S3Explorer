@@ -4,6 +4,7 @@
 mod commands;
 mod crypto;
 mod errors;
+mod metrics;
 mod models;
 mod profiles;
 mod s3_adapter;

@@ -5,6 +5,7 @@ import { useToast } from './useToast'
 import { useI18n } from './useI18n'
 import { useSettingsStore } from '../stores/settings'
 import { logger } from '../utils/logger'
+import { getCacheMetrics } from './useCacheMetrics'
 
 /**
  * Search index stored in IndexedDB
@@ -378,16 +379,18 @@ export function useSearchIndex() {
 
   /**
    * Search in index (ultra-fast)
+   * Records a cache hit event since this avoids S3 LIST requests
    */
   function searchInIndex(
     index: SearchIndex,
     query: string,
-    prefix: string = ''
+    prefix: string = '',
+    options?: { profileId?: string }
   ): S3Object[] {
     const queryLower = query.toLowerCase()
     const prefixLower = prefix.toLowerCase()
 
-    return index.objects
+    const results = index.objects
       .filter((obj) => {
         // Filter by prefix (local vs global mode)
         if (prefixLower && !obj.searchKey.startsWith(prefixLower)) {
@@ -405,6 +408,27 @@ export function useSearchIndex() {
         e_tag: '',
         is_folder: false,
       }))
+
+    // Track cache hit - estimate S3 requests saved
+    // A full search would require ~1 LIST per 1000 objects
+    const savedRequests = Math.ceil(index.totalObjects / 1000)
+    getCacheMetrics().recordCacheHit('search', {
+      profileId: options?.profileId,
+      bucketName: index.bucketName,
+      savedRequests,
+    }).catch((e) => logger.error('Failed to record cache hit', e))
+
+    return results
+  }
+
+  /**
+   * Record a cache miss event (called when search falls back to S3)
+   */
+  function recordSearchCacheMiss(profileId?: string, bucketName?: string): void {
+    getCacheMetrics().recordCacheMiss('search', {
+      profileId,
+      bucketName,
+    }).catch((e) => logger.error('Failed to record cache miss', e))
   }
 
   /**
@@ -527,6 +551,7 @@ export function useSearchIndex() {
     loadIndex,
     buildIndex,
     searchInIndex,
+    recordSearchCacheMiss,
     deleteIndex,
     rebuildIndex,
     estimateBucketSize,
