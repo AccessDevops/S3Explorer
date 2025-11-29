@@ -180,21 +180,21 @@ La meilleure solution est d'utiliser GitHub Actions qui fournit des runners nati
 ### macOS
 ```bash
 # Vérifier l'architecture
-lipo -archs S3\ Browser.app/Contents/MacOS/s3-browser
+lipo -archs S3\ Explorer.app/Contents/MacOS/s3-explorer
 # Devrait afficher: x86_64 arm64
 ```
 
 ### Linux
 ```bash
 # Vérifier l'architecture
-file s3browser_0.1.0_amd64.AppImage
+file s3bexplorer_0.1.0_amd64.AppImage
 # Devrait afficher: x86-64
 ```
 
 ### Windows
 ```powershell
 # Dans PowerShell
-dumpbin /headers S3Browser.exe | findstr machine
+dumpbin /headers S3Explorer.exe | findstr machine
 # Devrait afficher: 8664 machine (x64)
 ```
 

@@ -112,7 +112,7 @@ See [SETUP.md](SETUP.md) for detailed installation instructions.
 ### Project Structure
 
 ```
-s3browser/
+s3explorer/
 ├── src/                    # Vue 3 frontend (TypeScript)
 │   ├── components/         # Reusable UI components
 │   ├── views/              # Page views
@@ -239,7 +239,7 @@ pub async fn list_buckets(profile_id: String) -> Result<Vec<Bucket>, String> {
 
 ## Security Considerations
 
-- **Credentials Storage**: Profiles are stored locally in `~/.config/s3browser/` (or OS equivalent)
+- **Credentials Storage**: Profiles are stored locally in `~/.config/s3explorer/` (or OS equivalent)
 - **No Telemetry**: This application does not send any data externally
 - **Local Processing**: All S3 operations run locally on your machine
 - **Plaintext Warning**: Currently credentials are stored in plaintext JSON. Consider OS keyring integration for production use.

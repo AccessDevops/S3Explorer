@@ -17,7 +17,7 @@ export interface BucketStats {
 /**
  * IndexedDB helper functions
  */
-const DB_NAME = 's3browser-bucket-stats'
+const DB_NAME = 's3explorer-bucket-stats'
 const DB_VERSION = 1
 const STORE_NAME = 'stats'
 

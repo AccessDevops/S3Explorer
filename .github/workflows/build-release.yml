@@ -72,7 +72,7 @@ jobs:
         if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: s3browser-${{ matrix.os_name }}
+          name: s3explorer-${{ matrix.os_name }}
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app.tar.gz
@@ -82,7 +82,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
         with:
-          name: s3browser-${{ matrix.os_name }}
+          name: s3explorer-${{ matrix.os_name }}
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
@@ -93,7 +93,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: s3browser-${{ matrix.os_name }}
+          name: s3explorer-${{ matrix.os_name }}
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe

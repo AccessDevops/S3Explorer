@@ -149,7 +149,7 @@ impl ProfileStore {
         let app_dir = dirs::config_dir()
             .ok_or_else(|| AppError::ConfigError("Cannot find config directory".to_string()))?;
 
-        Ok(app_dir.join("s3browser").join("profiles.json"))
+        Ok(app_dir.join("s3explorer").join("profiles.json"))
     }
 
     /// List all profiles (decrypted)

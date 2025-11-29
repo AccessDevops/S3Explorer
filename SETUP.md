@@ -64,7 +64,7 @@ Download from [docker.com](https://www.docker.com/get-started)
 
 1. **Clone the repository** (if applicable) or navigate to the project directory:
    ```bash
-   cd s3browser
+   cd s3explorer
    ```
 
 2. **Install Node.js dependencies:**
@@ -209,7 +209,7 @@ npm run test
 ## Project Structure
 
 ```
-s3browser/
+s3explorer/
 ├── src/                    # Vue 3 frontend
 │   ├── components/         # UI components
 │   ├── views/              # Page views
@@ -258,14 +258,14 @@ npm install
 **Solution:** Ensure Docker is running and MinIO container is up
 ```bash
 docker ps
-# Should show s3browser-minio container
+# Should show s3explorer-minio container
 ```
 
 ### 5. Profile storage errors
 
 **Solution:** Check permissions for config directory
-- macOS/Linux: `~/.config/s3browser/`
-- Windows: `%APPDATA%/s3browser/`
+- macOS/Linux: `~/.config/s3explorer/`
+- Windows: `%APPDATA%/s3explorer/`
 
 ## Next Steps
 

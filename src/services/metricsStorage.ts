@@ -22,7 +22,7 @@ import type {
 } from '@/types/metrics'
 import { DEFAULT_S3_PRICING, calculateCost } from '@/types/metrics'
 
-const DB_NAME = 's3browser-metrics'
+const DB_NAME = 's3explorer-metrics'
 const DB_VERSION = 2 // Upgraded for cache store
 const REQUESTS_STORE = 'requests'
 const DAILY_STATS_STORE = 'daily_stats'

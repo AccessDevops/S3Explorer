@@ -27,7 +27,7 @@ export interface SearchIndex {
 /**
  * IndexedDB helper functions
  */
-const DB_NAME = 's3browser-search-index'
+const DB_NAME = 's3explorer-search-index'
 const DB_VERSION = 1
 const STORE_NAME = 'indexes'
 

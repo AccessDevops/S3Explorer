@@ -138,7 +138,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: s3browser-${{ matrix.platform }}
+          name: s3explorer-${{ matrix.platform }}
           path: |
             src-tauri/target/release/bundle/*
             src-tauri/target/release/*.exe

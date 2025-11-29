@@ -28,7 +28,7 @@ impl S3Adapter {
             &profile.secret_key,
             profile.session_token.clone(),
             None,
-            "s3browser",
+            "s3explorer",
         );
 
         // Use provided region or default to "us-east-1"
