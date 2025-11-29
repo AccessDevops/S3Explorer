@@ -12,9 +12,9 @@ export type MonacoTheme = 'vs-dark' | 'vs' | 'hc-black'
 export const useSettingsStore = defineStore('settings', () => {
   const language = ref<Language>('en')
 
-  // Batch size for object navigation (smaller = faster UI response, less data per request)
-  // Note: Index building always uses 1000 (S3 maximum) for optimal performance
-  const batchSize = ref(250)
+  // Batch size for object navigation (S3 maximum is 1000)
+  // Note: Index building always uses 1000 for optimal performance
+  const batchSize = ref(1000)
 
   const searchMode = ref<SearchMode>('local')
   const viewMode = ref<ViewMode>('normal')
@@ -62,8 +62,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const savedBatchSize = localStorage.getItem('app-batchSize')
     if (savedBatchSize) {
       const size = parseInt(savedBatchSize, 10)
-      // Enforce max 500 to prevent UI performance issues with large lists
-      if (!isNaN(size) && size >= 1 && size <= 500) {
+      // Enforce max 1000 (S3 API maximum)
+      if (!isNaN(size) && size >= 1 && size <= 1000) {
         batchSize.value = size
       }
     }
@@ -169,9 +169,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save batch size to localStorage
   const setBatchSize = (size: number) => {
-    // Enforce max 500 to prevent UI performance issues with large lists
-    if (size < 1 || size > 500) {
-      throw new Error('Batch size must be between 1 and 500')
+    // Silently ignore invalid values during typing
+    if (isNaN(size) || size < 1 || size > 1000) {
+      return
     }
     batchSize.value = size
     localStorage.setItem('app-batchSize', String(size))
@@ -191,8 +191,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save max concurrent uploads to localStorage
   const setMaxConcurrentUploads = (max: number) => {
-    if (max < 1 || max > 30) {
-      throw new Error('Max concurrent uploads must be between 1 and 30')
+    if (isNaN(max) || max < 1 || max > 30) {
+      return // Silently ignore invalid values
     }
     maxConcurrentUploads.value = max
     localStorage.setItem('app-maxConcurrentUploads', String(max))
@@ -200,8 +200,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save multipart threshold to localStorage
   const setMultipartThresholdMB = (threshold: number) => {
-    if (threshold < 5 || threshold > 1000) {
-      throw new Error('Multipart threshold must be between 5 and 1000 MB')
+    if (isNaN(threshold) || threshold < 5 || threshold > 1000) {
+      return // Silently ignore invalid values
     }
     multipartThresholdMB.value = threshold
     localStorage.setItem('app-multipartThresholdMB', String(threshold))
@@ -209,8 +209,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save index validity hours to localStorage
   const setIndexValidityHours = (hours: number) => {
-    if (hours < 1 || hours > 48) {
-      throw new Error('Index validity must be between 1 and 48 hours')
+    if (isNaN(hours) || hours < 1 || hours > 48) {
+      return // Silently ignore invalid values
     }
     indexValidityHours.value = hours
     localStorage.setItem('app-indexValidityHours', String(hours))
@@ -218,8 +218,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save index auto-build threshold to localStorage
   const setIndexAutoBuildThreshold = (threshold: number) => {
-    if (threshold < 100 || threshold > 100000) {
-      throw new Error('Index auto-build threshold must be between 100 and 100000 objects')
+    if (isNaN(threshold) || threshold < 100 || threshold > 100000) {
+      return // Silently ignore invalid values
     }
     indexAutoBuildThreshold.value = threshold
     localStorage.setItem('app-indexAutoBuildThreshold', String(threshold))
@@ -227,8 +227,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Save bucket stats cache TTL to localStorage
   const setBucketStatsCacheTTLHours = (hours: number) => {
-    if (hours < 1 || hours > 168) {
-      throw new Error('Bucket stats cache TTL must be between 1 and 168 hours (1 week)')
+    if (isNaN(hours) || hours < 1 || hours > 168) {
+      return // Silently ignore invalid values
     }
     bucketStatsCacheTTLHours.value = hours
     localStorage.setItem('app-bucketStatsCacheTTLHours', String(hours))

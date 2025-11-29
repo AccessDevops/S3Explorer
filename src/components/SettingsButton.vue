@@ -255,9 +255,9 @@
                 <Input
                   type="number"
                   :model-value="settingsStore.batchSize"
-                  @update:model-value="(val) => settingsStore.setBatchSize(Number(val))"
+                  @change="(e: Event) => settingsStore.setBatchSize(Number((e.target as HTMLInputElement).value))"
                   min="1"
-                  max="500"
+                  max="1000"
                 />
               </div>
 
@@ -268,7 +268,7 @@
                 <Input
                   type="number"
                   :model-value="settingsStore.maxConcurrentUploads"
-                  @update:model-value="(val) => settingsStore.setMaxConcurrentUploads(Number(val))"
+                  @change="(e: Event) => settingsStore.setMaxConcurrentUploads(Number((e.target as HTMLInputElement).value))"
                   min="1"
                   max="30"
                 />
@@ -282,7 +282,7 @@
                   <Input
                     type="number"
                     :model-value="settingsStore.multipartThresholdMB"
-                    @update:model-value="(val) => settingsStore.setMultipartThresholdMB(Number(val))"
+                    @change="(e: Event) => settingsStore.setMultipartThresholdMB(Number((e.target as HTMLInputElement).value))"
                     min="5"
                     max="1000"
                     class="flex-1"
@@ -299,7 +299,7 @@
                   <Input
                     type="number"
                     :model-value="settingsStore.previewWarningLimitMB"
-                    @update:model-value="(val) => settingsStore.setPreviewWarningLimitMB(Number(val))"
+                    @change="(e: Event) => settingsStore.setPreviewWarningLimitMB(Number((e.target as HTMLInputElement).value))"
                     min="10"
                     max="500"
                     class="flex-1"
@@ -316,7 +316,7 @@
                   <Input
                     type="number"
                     :model-value="settingsStore.previewMaxLimitMB"
-                    @update:model-value="(val) => settingsStore.setPreviewMaxLimitMB(Number(val))"
+                    @change="(e: Event) => settingsStore.setPreviewMaxLimitMB(Number((e.target as HTMLInputElement).value))"
                     min="10"
                     max="5000"
                     class="flex-1"
@@ -348,7 +348,7 @@
                   <Input
                     type="number"
                     :model-value="settingsStore.indexValidityHours"
-                    @update:model-value="(val) => settingsStore.setIndexValidityHours(Number(val))"
+                    @change="(e: Event) => settingsStore.setIndexValidityHours(Number((e.target as HTMLInputElement).value))"
                     min="1"
                     max="48"
                     class="flex-1"
@@ -369,7 +369,7 @@
                   <Input
                     type="number"
                     :model-value="settingsStore.indexAutoBuildThreshold"
-                    @update:model-value="(val) => settingsStore.setIndexAutoBuildThreshold(Number(val))"
+                    @change="(e: Event) => settingsStore.setIndexAutoBuildThreshold(Number((e.target as HTMLInputElement).value))"
                     min="100"
                     max="100000"
                     class="flex-1"
