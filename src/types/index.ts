@@ -129,3 +129,83 @@ export interface GetObjectMetadataResponse {
 
 // Error types
 export * from './errors'
+
+// ============================================================================
+// Index Types (from Rust SQLite backend)
+// ============================================================================
+
+// Storage class statistics
+export interface StorageClassStats {
+  storage_class: string
+  object_count: number
+  total_size: number
+}
+
+// Bucket index statistics
+export interface BucketIndexStats {
+  bucket_name: string
+  total_objects: number
+  total_size: number
+  is_complete: boolean
+  storage_class_breakdown: StorageClassStats[]
+  last_indexed_at: number | null
+}
+
+// Prefix (folder) statistics
+export interface PrefixStats {
+  prefix: string
+  objects_count: number
+  total_size: number
+  is_complete: boolean
+  last_sync_at: number | null
+}
+
+// Full prefix status from the index database
+export interface PrefixStatus {
+  profile_id: string
+  bucket_name: string
+  prefix: string
+  is_complete: boolean
+  objects_count: number
+  total_size: number
+  continuation_token: string | null
+  last_indexed_key: string | null
+  last_sync_started_at: number | null
+  last_sync_completed_at: number | null
+}
+
+// Initial indexation result
+export interface InitialIndexResult {
+  total_indexed: number
+  is_complete: boolean
+  requests_made: number
+  continuation_token: string | null
+  last_key: string | null
+  total_size: number
+  error: string | null
+}
+
+// Index status enum
+export type IndexStatus = 'starting' | 'indexing' | 'completed' | 'partial' | 'failed'
+
+// Index progress event (from Rust via Tauri events)
+export interface IndexProgressEvent {
+  profile_id: string
+  bucket_name: string
+  objects_indexed: number
+  requests_made: number
+  max_requests: number
+  is_complete: boolean
+  status: IndexStatus
+  error: string | null
+}
+
+// Bucket index metadata (for listing all indexes)
+export interface BucketIndexMetadata {
+  bucket_name: string
+  total_objects: number
+  total_size: number
+  is_complete: boolean
+  last_indexed_at: number | null
+  estimated_index_size: number // Estimated size of the index data for this bucket
+}

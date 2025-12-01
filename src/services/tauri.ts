@@ -10,6 +10,12 @@ import type {
   GetObjectTagsResponse,
   ObjectTag,
   GetObjectMetadataResponse,
+  BucketIndexStats,
+  PrefixStats,
+  PrefixStatus,
+  InitialIndexResult,
+  S3Object,
+  BucketIndexMetadata,
 } from '../types'
 
 // Profile Management
@@ -44,9 +50,10 @@ export async function getBucketAcl(profileId: string, bucketName: string): Promi
 
 export async function calculateBucketStats(
   profileId: string,
-  bucketName: string
-): Promise<[number, number]> {
-  return await invoke('calculate_bucket_stats', { profileId, bucketName })
+  bucketName: string,
+  forceRefresh?: boolean
+): Promise<[number, number, boolean]> {
+  return await invoke('calculate_bucket_stats', { profileId, bucketName, forceRefresh })
 }
 
 export async function estimateBucketStats(
@@ -63,7 +70,8 @@ export async function listObjects(
   prefix?: string,
   continuationToken?: string,
   maxKeys?: number,
-  useDelimiter?: boolean
+  useDelimiter?: boolean,
+  syncIndex?: boolean
 ): Promise<ListObjectsResponse> {
   return await invoke('list_objects', {
     profileId,
@@ -72,6 +80,7 @@ export async function listObjects(
     continuationToken,
     maxKeys,
     useDelimiter,
+    syncIndex,
   })
 }
 
@@ -172,12 +181,14 @@ export async function generatePresignedUrl(
 export async function calculateFolderSize(
   profileId: string,
   bucket: string,
-  prefix: string
-): Promise<number> {
+  prefix: string,
+  forceRefresh?: boolean
+): Promise<[number, boolean]> {
   return await invoke('calculate_folder_size', {
     profileId,
     bucket,
     prefix,
+    forceRefresh,
   })
 }
 
@@ -305,4 +316,99 @@ export async function updateObjectMetadata(
     expires: metadata.expires,
     metadata: metadata.metadata,
   })
+}
+
+// ============================================================================
+// Index Management
+// ============================================================================
+
+export async function startInitialIndex(
+  profileId: string,
+  bucketName: string,
+  maxRequests?: number,
+  batchSize?: number
+): Promise<InitialIndexResult> {
+  return await invoke('start_initial_index', { profileId, bucketName, maxRequests, batchSize })
+}
+
+export async function getBucketIndexStats(
+  profileId: string,
+  bucketName: string
+): Promise<BucketIndexStats> {
+  return await invoke('get_bucket_index_stats', { profileId, bucketName })
+}
+
+export async function getPrefixIndexStats(
+  profileId: string,
+  bucketName: string,
+  prefix: string
+): Promise<PrefixStats> {
+  return await invoke('get_prefix_index_stats', { profileId, bucketName, prefix })
+}
+
+export async function clearBucketIndex(
+  profileId: string,
+  bucketName: string
+): Promise<void> {
+  return await invoke('clear_bucket_index', { profileId, bucketName })
+}
+
+export async function isBucketIndexed(
+  profileId: string,
+  bucketName: string
+): Promise<boolean> {
+  return await invoke('is_bucket_indexed', { profileId, bucketName })
+}
+
+export async function isBucketIndexComplete(
+  profileId: string,
+  bucketName: string
+): Promise<boolean> {
+  return await invoke('is_bucket_index_complete', { profileId, bucketName })
+}
+
+export async function isPrefixKnown(
+  profileId: string,
+  bucketName: string,
+  prefix: string
+): Promise<boolean> {
+  return await invoke('is_prefix_known', { profileId, bucketName, prefix })
+}
+
+export async function getPrefixStatus(
+  profileId: string,
+  bucketName: string,
+  prefix: string
+): Promise<PrefixStatus | null> {
+  return await invoke('get_prefix_status', { profileId, bucketName, prefix })
+}
+
+export async function isPrefixDiscoveredOnly(
+  profileId: string,
+  bucketName: string,
+  prefix: string
+): Promise<boolean> {
+  return await invoke('is_prefix_discovered_only', { profileId, bucketName, prefix })
+}
+
+export async function searchObjectsInIndex(
+  profileId: string,
+  bucketName: string,
+  query: string,
+  prefix?: string,
+  limit?: number
+): Promise<S3Object[]> {
+  return await invoke('search_objects_in_index', { profileId, bucketName, query, prefix, limit })
+}
+
+export async function getAllBucketIndexes(
+  profileId: string
+): Promise<BucketIndexMetadata[]> {
+  return await invoke('get_all_bucket_indexes', { profileId })
+}
+
+export async function getIndexFileSize(
+  profileId: string
+): Promise<number> {
+  return await invoke('get_index_file_size', { profileId })
 }

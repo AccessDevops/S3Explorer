@@ -113,7 +113,7 @@ pub struct Bucket {
 }
 
 /// S3 Object information
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3Object {
     pub key: String,
     pub size: i64,
@@ -569,4 +569,309 @@ pub fn categorize_s3_error(error_str: &str) -> S3ErrorCategory {
     } else {
         S3ErrorCategory::Unknown
     }
+}
+
+// ============================================================================
+// Index Database Models
+// ============================================================================
+
+/// Objet indexé dans SQLite (enrichi par rapport à S3Object)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedObject {
+    pub id: Option<i64>,
+    pub profile_id: String,
+    pub bucket_name: String,
+    pub key: String,
+    pub version_id: Option<String>,
+
+    // Propriétés S3
+    pub size: i64,
+    pub last_modified: Option<String>,
+    pub e_tag: Option<String>,
+    pub storage_class: String,
+
+    // Propriétés optionnelles
+    pub owner_id: Option<String>,
+    pub owner_display_name: Option<String>,
+    pub checksum_algorithm: Option<String>,
+
+    // Glacier/Archive
+    pub restore_status: Option<String>,
+    pub restore_expiry_date: Option<String>,
+
+    // Métadonnées enrichies (HeadObject)
+    pub content_type: Option<String>,
+    pub server_side_encryption: Option<String>,
+    pub sse_kms_key_id: Option<String>,
+
+    // Colonnes pré-calculées
+    pub parent_prefix: String,
+    pub basename: String,
+    pub extension: Option<String>,
+    pub depth: i32,
+    pub is_folder: bool,
+
+    // Tracking
+    pub indexed_at: i64,
+    pub metadata_loaded: bool,
+}
+
+impl IndexedObject {
+    /// Créer un IndexedObject à partir d'un S3Object
+    pub fn from_s3_object(
+        s3_obj: &S3Object,
+        profile_id: &str,
+        bucket_name: &str,
+    ) -> Self {
+        let key = &s3_obj.key;
+        let parent_prefix = Self::extract_parent_prefix(key);
+        let basename = Self::extract_basename(key);
+        let extension = Self::extract_extension(key);
+        let depth = key.matches('/').count() as i32;
+
+        Self {
+            id: None,
+            profile_id: profile_id.to_string(),
+            bucket_name: bucket_name.to_string(),
+            key: key.clone(),
+            version_id: None,
+            size: s3_obj.size,
+            last_modified: s3_obj.last_modified.clone(),
+            e_tag: s3_obj.e_tag.clone(),
+            storage_class: s3_obj.storage_class.clone().unwrap_or_else(|| "STANDARD".to_string()),
+            owner_id: None,
+            owner_display_name: None,
+            checksum_algorithm: None,
+            restore_status: None,
+            restore_expiry_date: None,
+            content_type: None,
+            server_side_encryption: None,
+            sse_kms_key_id: None,
+            parent_prefix,
+            basename,
+            extension,
+            depth,
+            is_folder: s3_obj.is_folder,
+            indexed_at: chrono::Utc::now().timestamp_millis(),
+            metadata_loaded: false,
+        }
+    }
+
+    /// Extraire le préfixe parent d'une clé
+    /// "folder/subfolder/file.txt" -> "folder/subfolder/"
+    /// "file.txt" -> ""
+    pub fn extract_parent_prefix(key: &str) -> String {
+        if let Some(pos) = key.rfind('/') {
+            key[..=pos].to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    /// Extraire le nom de base d'une clé
+    /// "folder/subfolder/file.txt" -> "file.txt"
+    pub fn extract_basename(key: &str) -> String {
+        if let Some(pos) = key.rfind('/') {
+            key[pos + 1..].to_string()
+        } else {
+            key.to_string()
+        }
+    }
+
+    /// Extraire l'extension d'une clé
+    /// "file.txt" -> Some("txt")
+    /// "file" -> None
+    /// "folder/" -> None
+    pub fn extract_extension(key: &str) -> Option<String> {
+        let basename = Self::extract_basename(key);
+        if basename.ends_with('/') || !basename.contains('.') {
+            return None;
+        }
+        basename.rsplit('.').next().map(|s| s.to_lowercase())
+    }
+}
+
+/// Statut d'un préfixe (dossier) dans l'index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrefixStatus {
+    pub id: Option<i64>,
+    pub profile_id: String,
+    pub bucket_name: String,
+    pub prefix: String,
+
+    pub is_complete: bool,
+    pub objects_count: i64,
+    pub total_size: i64,
+
+    // Pour reprise d'indexation
+    pub continuation_token: Option<String>,
+    pub last_indexed_key: Option<String>,
+
+    pub last_sync_started_at: Option<i64>,
+    pub last_sync_completed_at: Option<i64>,
+}
+
+impl Default for PrefixStatus {
+    fn default() -> Self {
+        Self {
+            id: None,
+            profile_id: String::new(),
+            bucket_name: String::new(),
+            prefix: String::new(),
+            is_complete: false,
+            objects_count: 0,
+            total_size: 0,
+            continuation_token: None,
+            last_indexed_key: None,
+            last_sync_started_at: None,
+            last_sync_completed_at: None,
+        }
+    }
+}
+
+/// Informations sur un bucket (configuration détectée)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketInfo {
+    pub id: Option<i64>,
+    pub profile_id: String,
+    pub bucket_name: String,
+
+    pub versioning_enabled: Option<bool>,
+    pub encryption_enabled: Option<bool>,
+    pub default_encryption: Option<String>,
+
+    pub acl: Option<String>,
+    pub acl_cached_at: Option<i64>,
+
+    pub region: Option<String>,
+
+    // Tracking indexation initiale
+    pub initial_index_requests: i32,
+    pub initial_index_completed: bool,
+
+    pub last_checked_at: Option<i64>,
+}
+
+impl Default for BucketInfo {
+    fn default() -> Self {
+        Self {
+            id: None,
+            profile_id: String::new(),
+            bucket_name: String::new(),
+            versioning_enabled: None,
+            encryption_enabled: None,
+            default_encryption: None,
+            acl: None,
+            acl_cached_at: None,
+            region: None,
+            initial_index_requests: 0,
+            initial_index_completed: false,
+            last_checked_at: None,
+        }
+    }
+}
+
+/// Résultat de l'indexation initiale d'un bucket
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitialIndexResult {
+    pub total_indexed: u64,
+    pub is_complete: bool,
+    pub requests_made: u32,
+    pub continuation_token: Option<String>,
+    pub last_key: Option<String>,
+    pub total_size: i64,
+    pub error: Option<String>,
+}
+
+/// Statistiques d'un préfixe (pour l'affichage UI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrefixStats {
+    pub prefix: String,
+    pub objects_count: i64,
+    pub total_size: i64,
+    pub is_complete: bool,
+    pub last_sync_at: Option<i64>,
+}
+
+/// Statistiques d'un bucket (calculées depuis l'index)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketIndexStats {
+    pub bucket_name: String,
+    pub total_objects: i64,
+    pub total_size: i64,
+    pub is_complete: bool,
+    pub storage_class_breakdown: Vec<StorageClassStats>,
+    pub last_indexed_at: Option<i64>,
+}
+
+/// Statistiques par classe de stockage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageClassStats {
+    pub storage_class: String,
+    pub object_count: i64,
+    pub total_size: i64,
+}
+
+/// Configuration de l'indexation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexingConfig {
+    pub max_initial_requests: u32,
+    pub batch_size: i32,
+    pub stale_ttl_hours: u32,
+}
+
+impl Default for IndexingConfig {
+    fn default() -> Self {
+        Self {
+            max_initial_requests: 20,
+            batch_size: 1000,
+            stale_ttl_hours: 24,
+        }
+    }
+}
+
+/// Statut d'indexation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexStatus {
+    Starting,
+    Indexing,
+    Completed,
+    Partial,
+    Failed,
+}
+
+/// Événement de progression d'indexation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexProgressEvent {
+    pub profile_id: String,
+    pub bucket_name: String,
+    pub objects_indexed: u64,
+    pub requests_made: u32,
+    pub max_requests: u32,
+    pub is_complete: bool,
+    pub status: IndexStatus,
+    pub error: Option<String>,
+}
+
+/// Métadonnées d'un index de bucket (pour listing dans Settings)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketIndexMetadata {
+    pub bucket_name: String,
+    pub total_objects: i64,
+    pub total_size: i64,
+    pub is_complete: bool,
+    pub last_indexed_at: Option<i64>,
+    /// Estimated size of the index data for this bucket (in bytes)
+    pub estimated_index_size: i64,
+}
+
+/// Résultat de recherche dans l'index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub objects: Vec<S3Object>,
+    pub query: String,
+    pub total_found: usize,
+    pub from_index: bool,
+    pub is_complete: bool,
 }

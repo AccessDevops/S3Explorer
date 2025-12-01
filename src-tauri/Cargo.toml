@@ -33,6 +33,12 @@ base64 = "0.22"
 rand = "0.8"
 url = "2.5"
 
+# SQLite database
+rusqlite = { version = "0.31", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+lazy_static = "1.4"
+
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem
 # DO NOT REMOVE!!

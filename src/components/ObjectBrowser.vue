@@ -296,8 +296,9 @@
           <div class="flex-1 min-w-0">
             <div class="font-medium truncate" :class="textSize">{{ getFolderName(folder) }}</div>
           </div>
-          <div class="text-sm text-muted-foreground w-24 text-right">
-            {{ getFolderSize(folder) }}
+          <div class="text-sm text-muted-foreground w-24 text-right" :class="{ 'text-yellow-400': isFolderSizeEstimate(folder) }">
+            <span v-if="isFolderSizeEstimate(folder)" v-tooltip="t('estimateTooltip')">{{ getFolderSize(folder).replace(/(\s)/, '⁺$1') }}</span>
+            <span v-else>{{ getFolderSize(folder) }}</span>
           </div>
           <div class="text-sm text-muted-foreground w-40 text-right">-</div>
           <div
@@ -1635,7 +1636,8 @@ import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
 import { useToast } from '../composables/useToast'
 import { useSwipeBack } from '../composables/useSwipeBack'
-import { useSearchIndex } from '../composables/useSearchIndex'
+import { getIndexManager } from '../composables/useIndexManager'
+import { useBucketStats } from '../composables/useBucketStats'
 import { useVirtualScroll } from '../composables/useVirtualScroll'
 import { formatSize, formatDate, formatTime } from '../utils/formatters'
 import { logger } from '../utils/logger'
@@ -1655,6 +1657,7 @@ import {
   deleteObjectTags,
   getObjectMetadata,
   updateObjectMetadata,
+  isPrefixKnown,
 } from '../services/tauri'
 import { save, open } from '@tauri-apps/api/dialog'
 import { writeBinaryFile } from '@tauri-apps/api/fs'
@@ -1770,7 +1773,8 @@ const { t } = useI18n()
 const dialog = useDialog()
 const toast = useToast()
 const rustUploadManager = useRustUploadManager()
-const searchIndex = useSearchIndex()
+const indexManager = getIndexManager()
+const bucketStatsComposable = useBucketStats()
 
 // Grouped reactive state - Modals
 const modals = reactive({
@@ -2070,7 +2074,10 @@ const loadingInlineVersions = ref(new Set<string>())
 
 // Folder size refs (will be migrated to folderSizes grouped state)
 const folderSizes = ref(new Map<string, number>())
+const folderSizeIsEstimate = ref(new Map<string, boolean>()) // Track which folders have estimated sizes
 const loadingFolderSizes = ref(new Set<string>())
+const unknownFolders = ref(new Set<string>()) // Track folders not in index (never browsed)
+const lastProcessedIndexStatus = ref<Record<string, string>>({}) // Track last processed index status to avoid redundant recalculations
 
 // Clipboard refs (will be migrated to clipboard grouped state)
 const copiedFile = ref<S3Object | null>(null)
@@ -2356,16 +2363,32 @@ watch(
     if (!appStore.currentProfile || !appStore.currentBucket) return
 
     for (const folder of folders) {
+      // Skip if we already have the size or know it's unknown
       if (folderSizes.value.has(folder)) continue
+      if (unknownFolders.value.has(folder)) continue
 
       loadingFolderSizes.value.add(folder)
       try {
-        const size = await calculateFolderSize(
+        // First check if this prefix has any objects in the index
+        const known = await isPrefixKnown(
           appStore.currentProfile.id,
           appStore.currentBucket,
           folder
         )
-        folderSizes.value.set(folder, size)
+
+        if (!known) {
+          // Folder has never been browsed/indexed - show "-"
+          unknownFolders.value.add(folder)
+        } else {
+          // Folder is known in index - calculate size
+          const [size, isEstimate] = await calculateFolderSize(
+            appStore.currentProfile.id,
+            appStore.currentBucket,
+            folder
+          )
+          folderSizes.value.set(folder, size)
+          folderSizeIsEstimate.value.set(folder, isEstimate)
+        }
       } catch (e) {
         logger.error(`Failed to calculate size for ${folder}:`, e)
       } finally {
@@ -2374,6 +2397,78 @@ watch(
     }
   },
   { immediate: true }
+)
+
+// Watch for index completion to recalculate folder sizes
+// This fixes the race condition where folders are marked as "unknown" before indexation completes
+watch(
+  () => indexManager.indexProgress.value,
+  async (progressMap) => {
+    // 1. Verify context
+    if (!appStore.currentProfile || !appStore.currentBucket) return
+
+    const profileId = appStore.currentProfile.id
+    const bucket = appStore.currentBucket
+    const prefix = appStore.currentPrefix
+    const key = `${profileId}-${bucket}`
+
+    const progress = progressMap[key]
+    if (!progress) return
+
+    // 2. Only react to 'completed' or 'partial' status
+    if (progress.status !== 'completed' && progress.status !== 'partial') return
+
+    // 3. Avoid redundant recalculations
+    const statusKey = `${key}-${progress.status}-${progress.objects_indexed}`
+    if (lastProcessedIndexStatus.value[key] === statusKey) return
+    lastProcessedIndexStatus.value[key] = statusKey
+
+    logger.debug(`[IndexWatch] Indexation finished for ${bucket}, recalculating folder sizes`)
+
+    // 4. Copy current folders (avoid mutation during iteration)
+    const currentFolders = [...appStore.folders]
+    if (currentFolders.length === 0) return
+
+    // 5. Clear caches
+    unknownFolders.value.clear()
+    folderSizes.value.clear()
+    folderSizeIsEstimate.value.clear()
+
+    // 6. Recalculate for each folder
+    for (const folder of currentFolders) {
+      // Check that context hasn't changed (race condition protection)
+      if (
+        appStore.currentBucket !== bucket ||
+        appStore.currentProfile?.id !== profileId ||
+        appStore.currentPrefix !== prefix
+      ) {
+        logger.debug('[IndexWatch] Context changed, aborting recalculation')
+        return
+      }
+
+      loadingFolderSizes.value.add(folder)
+      try {
+        const known = await isPrefixKnown(profileId, bucket, folder)
+
+        if (!known) {
+          unknownFolders.value.add(folder)
+        } else {
+          const [size, isEstimate] = await calculateFolderSize(profileId, bucket, folder)
+          folderSizes.value.set(folder, size)
+          folderSizeIsEstimate.value.set(folder, isEstimate)
+        }
+      } catch (e) {
+        logger.error(`[IndexWatch] Error calculating size for ${folder}:`, e)
+      } finally {
+        loadingFolderSizes.value.delete(folder)
+      }
+    }
+
+    logger.debug(
+      `[IndexWatch] Recalculation complete: ${folderSizes.value.size} sizes, ${unknownFolders.value.size} unknown`
+    )
+  },
+  { deep: true }
 )
 
 // Stop search function
@@ -2401,19 +2496,19 @@ async function handleIndexChanged() {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   // Reload index status
-  const hasIndex = await searchIndex.hasValidIndex(
+  const isIndexed = await indexManager.isIndexed(
     appStore.currentProfile.id,
     appStore.currentBucket
   )
-  hasSearchIndex.value = hasIndex
+  hasSearchIndex.value = isIndexed
 
-  if (hasIndex) {
-    const metadata = await searchIndex.getIndexMetadata(
+  if (isIndexed) {
+    const stats = await indexManager.getIndexStats(
       appStore.currentProfile.id,
       appStore.currentBucket
     )
-    if (metadata) {
-      currentIndexSize.value = metadata.totalObjects
+    if (stats) {
+      currentIndexSize.value = stats.total_objects
     }
   } else {
     currentIndexSize.value = 0
@@ -2427,12 +2522,14 @@ async function handleBuildIndexFromPrompt() {
   showIndexBuildPrompt.value = false
 
   try {
-    const index = await searchIndex.buildIndex(
+    const result = await indexManager.startIndexing(
       appStore.currentProfile.id,
       appStore.currentBucket
     )
-    hasSearchIndex.value = true
-    currentIndexSize.value = index.totalObjects
+    if (result) {
+      hasSearchIndex.value = true
+      currentIndexSize.value = result.total_indexed
+    }
   } catch (error) {
     logger.error('Failed to build index:', error)
     toast.error(t('errorOccurred'))
@@ -2446,12 +2543,19 @@ async function handleUpdateIndexFromPrompt() {
   showIndexUpdatePrompt.value = false
 
   try {
-    const index = await searchIndex.rebuildIndex(
+    // Clear existing index and rebuild
+    await indexManager.clearIndex(
       appStore.currentProfile.id,
       appStore.currentBucket
     )
-    hasSearchIndex.value = true
-    currentIndexSize.value = index.totalObjects
+    const result = await indexManager.startIndexing(
+      appStore.currentProfile.id,
+      appStore.currentBucket
+    )
+    if (result) {
+      hasSearchIndex.value = true
+      currentIndexSize.value = result.total_indexed
+    }
   } catch (error) {
     logger.error('Failed to update index:', error)
     toast.error(t('errorOccurred'))
@@ -2517,49 +2621,47 @@ watch(searchQuery, async (query) => {
       const searchPrefix = settingsStore.searchMode === 'local' ? appStore.currentPrefix : ''
 
       // ═══════════════════════════════════════════════════════════
-      // TRY INDEX FIRST (ultra-fast if available and valid)
+      // TRY INDEX FIRST (ultra-fast SQLite search)
       // ═══════════════════════════════════════════════════════════
 
-      const hasIndex = await searchIndex.hasValidIndex(profileId, bucket)
-      const indexEnabled = searchIndex.isIndexEnabled(profileId, bucket)
+      const hasIndex = await indexManager.isIndexed(profileId, bucket)
 
       // Check version again after async operation
       if (currentSearchVersion !== searchVersion.value) return
 
-      if (hasIndex && indexEnabled) {
-        logger.debug('Using search index for instant results')
+      if (hasIndex) {
+        logger.debug('Using SQLite index for instant results')
         useIndexForSearch.value = true
 
-        const index = await searchIndex.loadIndex(profileId, bucket)
+        const results = await indexManager.searchObjects(
+          profileId,
+          bucket,
+          query,
+          searchPrefix || undefined
+        )
 
         // Check version again after async operation
         if (currentSearchVersion !== searchVersion.value) return
 
-        if (index) {
-          const results = searchIndex.searchInIndex(index, query, searchPrefix)
-          globalSearchResults.value = results
-          searchProgress.value = results.length
-          searchDuration.value = Date.now() - searchStartTime.value
+        globalSearchResults.value = results
+        searchProgress.value = results.length
+        searchDuration.value = Date.now() - searchStartTime.value
 
-          logger.debug(`Index search complete: ${results.length} results in ${searchDuration.value}ms`)
+        logger.debug(`Index search complete: ${results.length} results in ${searchDuration.value}ms`)
 
-          // Mark search as complete (bar stays visible as long as searchQuery exists)
-          isSearching.value = false
+        // Mark search as complete (bar stays visible as long as searchQuery exists)
+        isSearching.value = false
 
-          return
-        }
+        return
       }
 
       // ═══════════════════════════════════════════════════════════
       // FALLBACK: LIVE SEARCH (with improved feedback)
       // ═══════════════════════════════════════════════════════════
 
-      logger.debug('Using live search (no valid index)')
+      logger.debug('Using live search (no index)')
       useIndexForSearch.value = false
       searchAbortController.value = new AbortController()
-
-      // Record cache miss - search is falling back to S3
-      searchIndex.recordSearchCacheMiss(profileId, bucket)
 
       let continuationToken: string | undefined = undefined
       const MAX_SEARCH_RESULTS = 10000 // Limit to prevent memory overflow
@@ -2567,7 +2669,7 @@ watch(searchQuery, async (query) => {
 
       // If no index exists and it's global search, suggest building one
       // (User can build index manually from settings if desired)
-      if (settingsStore.searchMode === 'global' && !hasIndex && !searchIndex.isBuilding.value) {
+      if (settingsStore.searchMode === 'global' && !hasIndex && !indexManager.isIndexing(profileId, bucket)) {
         logger.debug('No search index found for global search - using live search')
       }
 
@@ -2695,86 +2797,32 @@ watch(
     showIndexBuildPrompt.value = false
     showIndexUpdatePrompt.value = false
 
-    // Auto-build index for new bucket (if no valid index exists)
+    // Clear folder size state to prevent cross-bucket contamination
+    // These maps use folder names as keys without bucket prefix, so they must be cleared on bucket change
+    folderSizes.value.clear()
+    folderSizeIsEstimate.value.clear()
+    unknownFolders.value.clear()
+    loadingFolderSizes.value.clear()
+
+    // Check index status for new bucket
+    // Note: Auto-indexing is handled by BucketList.vue when bucket is selected
     if (newBucket && appStore.currentProfile) {
       const profileId = appStore.currentProfile.id
-      const indexStatus = await searchIndex.getIndexStatus(profileId, newBucket)
 
-      logger.debug(`[Index] Bucket ${newBucket}: exists=${indexStatus.exists}, isValid=${indexStatus.isValid}, age=${Math.round(indexStatus.age / 1000 / 60)}min, objects=${indexStatus.totalObjects}`)
+      // Check if bucket is indexed
+      const isIndexed = await indexManager.isIndexed(profileId, newBucket)
 
-      if (indexStatus.exists && indexStatus.isValid) {
-        // Valid index exists (< 8h old)
-        hasSearchIndex.value = true
-        currentIndexSize.value = indexStatus.totalObjects
-        logger.debug(`[Index] Valid index with ${indexStatus.totalObjects} objects`)
-      } else if (indexStatus.exists && !indexStatus.isValid) {
-        // Expired index exists (> 8h old) - check if we should update
-        hasSearchIndex.value = true // Keep using the old index until updated
-        currentIndexSize.value = indexStatus.totalObjects
-
-        logger.debug(`[Index] Expired index found (age: ${Math.round(indexStatus.age / 1000 / 60 / 60)}h)`)
-
-        if (!searchIndex.isBuilding.value) {
-          // Estimate current bucket size
-          const estimatedCount = await searchIndex.estimateBucketSize(profileId, newBucket)
-          logger.debug(`[Index] Current bucket size estimate: ${estimatedCount}`)
-
-          if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
-            // Auto-rebuild for small buckets (< threshold objects)
-            logger.debug(`[Index] Auto-rebuilding expired index for small bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
-            searchIndex.rebuildIndex(profileId, newBucket)
-              .then((index) => {
-                hasSearchIndex.value = true
-                currentIndexSize.value = index.totalObjects
-              })
-              .catch(error => {
-                logger.error('Failed to auto-rebuild index:', error)
-              })
-          } else {
-            // Show update prompt for large buckets
-            const diff = estimatedCount === -1 ? 0 : estimatedCount - indexStatus.totalObjects
-            logger.debug(`[Index] Showing update prompt. Diff: ${diff > 0 ? '+' : ''}${diff}`)
-
-            showIndexUpdatePrompt.value = true
-            indexUpdateObjectDiff.value = diff
-            indexUpdateCurrentCount.value = estimatedCount
-            indexUpdateIndexCount.value = indexStatus.totalObjects
-          }
-        }
-      } else if (!searchIndex.isBuilding.value) {
-        // No index exists - estimate bucket size to decide if we should auto-build
-        const estimatedCount = await searchIndex.estimateBucketSize(profileId, newBucket)
-        logger.debug(`[Index] Estimated bucket size: ${estimatedCount}`)
-
-        if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
-          // Auto-build for small buckets (< threshold objects)
-          logger.debug(`[Index] Auto-building index for bucket with ${estimatedCount} objects (threshold=${settingsStore.indexAutoBuildThreshold})`)
-          searchIndex.buildIndex(profileId, newBucket)
-            .then((index) => {
-              hasSearchIndex.value = true
-              currentIndexSize.value = index.totalObjects
-            })
-            .catch(error => {
-              logger.error('Failed to auto-build index:', error)
-            })
-        } else if (estimatedCount === -1 || estimatedCount >= settingsStore.indexAutoBuildThreshold) {
-          // Show prompt for large buckets (>= threshold objects)
-          logger.debug(`[Index] Showing build prompt for large bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
-          showIndexBuildPrompt.value = true
-          indexPromptObjectCount.value = estimatedCount
-
-          // Estimate index size
-          if (estimatedCount !== -1) {
-            const estimatedBytes = searchIndex.estimateIndexSize(estimatedCount)
-            indexPromptEstimatedSize.value = formatSize(estimatedBytes)
-          } else {
-            // When truncated, we know there are at least threshold objects
-            const minEstimatedBytes = searchIndex.estimateIndexSize(settingsStore.indexAutoBuildThreshold)
-            indexPromptEstimatedSize.value = `≈ ${formatSize(minEstimatedBytes)}`
-          }
+      if (isIndexed) {
+        const stats = await indexManager.getIndexStats(profileId, newBucket)
+        if (stats) {
+          hasSearchIndex.value = true
+          currentIndexSize.value = stats.total_objects
+          logger.debug(`[Index] Bucket ${newBucket}: indexed with ${stats.total_objects} objects, complete=${stats.is_complete}`)
         }
       } else {
-        logger.debug(`[Index] Build already in progress, skipping prompt`)
+        hasSearchIndex.value = false
+        currentIndexSize.value = 0
+        logger.debug(`[Index] Bucket ${newBucket}: not indexed`)
       }
     }
   }
@@ -2799,9 +2847,17 @@ function getFolderSize(folder: string): string {
   if (loadingFolderSizes.value.has(folder)) {
     return t('calculating')
   }
+  // Check if folder is known to be unknown (never browsed/indexed)
+  if (unknownFolders.value.has(folder)) {
+    return '-'
+  }
   const size = folderSizes.value.get(folder)
   if (size === undefined) return '-'
   return formatSize(size)
+}
+
+function isFolderSizeEstimate(folder: string): boolean {
+  return folderSizeIsEstimate.value.get(folder) ?? false
 }
 
 /**
@@ -2853,6 +2909,14 @@ async function reloadAllPages() {
         })
       }
 
+      // Invalidate bucket stats cache to force recalculation from updated index
+      if (appStore.currentProfile && appStore.currentBucket) {
+        bucketStatsComposable.invalidateStats(
+          appStore.currentProfile.id,
+          appStore.currentBucket
+        )
+      }
+
       // Success
       toast.completeToast(
         toastId,
@@ -2871,11 +2935,15 @@ async function reloadAllPages() {
 
 function navigateToRoot() {
   folderSizes.value.clear()
+  folderSizeIsEstimate.value.clear()
+  unknownFolders.value.clear()
   navigateAndLoad('')
 }
 
 function navigateToPath(index: number) {
   folderSizes.value.clear()
+  folderSizeIsEstimate.value.clear()
+  unknownFolders.value.clear()
   const parts = pathParts.value.slice(0, index + 1)
   const prefix = parts.join('/') + '/'
   navigateAndLoad(prefix)
@@ -2883,6 +2951,8 @@ function navigateToPath(index: number) {
 
 function navigateToFolder(folder: string) {
   folderSizes.value.clear()
+  folderSizeIsEstimate.value.clear()
+  unknownFolders.value.clear()
   navigateAndLoad(folder)
 }
 
@@ -3366,6 +3436,12 @@ async function loadAllObjects() {
         message: `${t('loaded')} ${totalLoaded} ${t('objects')}...`,
       })
     }
+
+    // Invalidate bucket stats cache to force recalculation from updated index
+    bucketStatsComposable.invalidateStats(
+      appStore.currentProfile.id,
+      appStore.currentBucket
+    )
 
     // Success toast
     toast.completeToast(

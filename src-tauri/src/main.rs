@@ -3,7 +3,9 @@
 
 mod commands;
 mod crypto;
+mod database;
 mod errors;
+mod index_manager;
 mod metrics;
 mod models;
 mod profiles;
@@ -46,6 +48,19 @@ fn main() {
             delete_object_tags,
             get_object_metadata,
             update_object_metadata,
+            // Index management commands
+            start_initial_index,
+            get_bucket_index_stats,
+            get_prefix_index_stats,
+            clear_bucket_index,
+            is_bucket_indexed,
+            is_bucket_index_complete,
+            is_prefix_known,
+            get_prefix_status,
+            is_prefix_discovered_only,
+            search_objects_in_index,
+            get_all_bucket_indexes,
+            get_index_file_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

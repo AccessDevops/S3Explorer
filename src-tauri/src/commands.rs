@@ -1,3 +1,5 @@
+use crate::database::DatabaseManager;
+use crate::index_manager::get_index_manager;
 use crate::metrics::MetricsContext;
 use crate::models::*;
 use crate::profiles::ProfileStore;
@@ -177,14 +179,27 @@ pub async fn get_bucket_acl(
 }
 
 /// Calculate bucket statistics (size and count of all objects)
-/// Note: This makes multiple ListObjectsV2 calls (one per 1000 objects)
+/// Returns (size, count, is_from_index)
+/// Note: Uses index if available, otherwise makes multiple ListObjectsV2 calls
 #[tauri::command]
 pub async fn calculate_bucket_stats(
     app: AppHandle,
     profile_id: String,
     bucket_name: String,
+    force_refresh: Option<bool>,
     state: State<'_, AppState>,
-) -> Result<(i64, i64), String> {
+) -> Result<(i64, i64, bool), String> {
+    // Try index first unless force_refresh is requested
+    if !force_refresh.unwrap_or(false) {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            if let Ok(stats) = index_mgr.get_bucket_stats(&bucket_name) {
+                // Return stats from index (is_from_index = true means it's from index, might be incomplete)
+                return Ok((stats.total_size, stats.total_objects, !stats.is_complete));
+            }
+        }
+    }
+
+    // Fallback to S3 calculation
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
@@ -201,7 +216,7 @@ pub async fn calculate_bucket_stats(
     let duration_ms = start_time.elapsed().as_millis() as u64;
 
     match &result {
-        Ok((_size, count, request_count)) => {
+        Ok((size, count, request_count)) => {
             // Emit one metric per API request made
             let avg_duration = duration_ms / (*request_count as u64).max(1);
             let objects_per_request = (*count as u32) / (*request_count).max(1);
@@ -214,6 +229,30 @@ pub async fn calculate_bucket_stats(
                     .with_objects_affected(objects_per_request);
                 crate::metrics::emit_metrics(&app, event);
             }
+
+            // When force_refresh is used, update the index with the accurate stats
+            // This marks the bucket as requiring re-indexing but stores the S3 stats
+            if force_refresh.unwrap_or(false) {
+                if let Ok(index_mgr) = get_index_manager(&profile_id) {
+                    // Update the root prefix status with the S3 stats
+                    // Note: We mark is_complete as false since we only have stats, not the actual objects
+                    // The next index operation will sync the objects
+                    let status = crate::models::PrefixStatus {
+                        id: None,
+                        profile_id: profile_id.clone(),
+                        bucket_name: bucket_name.clone(),
+                        prefix: String::new(),
+                        is_complete: false, // Mark as incomplete to trigger re-indexing
+                        objects_count: *count,
+                        total_size: *size,
+                        continuation_token: None,
+                        last_indexed_key: None,
+                        last_sync_started_at: Some(chrono::Utc::now().timestamp_millis()),
+                        last_sync_completed_at: None,
+                    };
+                    let _ = index_mgr.db.upsert_prefix_status(&status);
+                }
+            }
         }
         Err(e) => {
             let ctx = MetricsContext::new(S3Operation::ListObjectsV2, RequestCategory::LIST)
@@ -223,7 +262,10 @@ pub async fn calculate_bucket_stats(
         }
     }
 
-    result.map(|(size, count, _)| (size, count)).map_err(|e| e.to_string())
+    // Return (size, count, is_estimate=false since we got complete data from S3)
+    result
+        .map(|(size, count, _)| (size, count, false))
+        .map_err(|e| e.to_string())
 }
 
 /// Estimate bucket statistics (fast - only first 1000 objects)
@@ -265,6 +307,11 @@ pub async fn estimate_bucket_stats(
 }
 
 /// List objects in a bucket
+///
+/// Parameters:
+/// - sync_index: If true and this is the first page (no continuation_token),
+///   also removes from the index any objects that no longer exist on S3.
+///   This cleans up "phantom objects" that were deleted by another client.
 #[tauri::command]
 pub async fn list_objects(
     app: AppHandle,
@@ -274,6 +321,7 @@ pub async fn list_objects(
     continuation_token: Option<String>,
     max_keys: Option<i32>,
     use_delimiter: Option<bool>,
+    sync_index: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<ListObjectsResponse, String> {
     let profile = {
@@ -293,7 +341,7 @@ pub async fn list_objects(
         .list_objects(
             &bucket,
             prefix.as_deref(),
-            continuation_token,
+            continuation_token.clone(),
             max_keys,
             use_delimiter.unwrap_or(true),
         )
@@ -303,6 +351,28 @@ pub async fn list_objects(
         Ok(response) => {
             ctx.set_objects_affected(response.objects.len() as u32);
             ctx.emit_success(&app);
+
+            // Update index with list response (non-blocking, ignore errors)
+            if let Ok(index_mgr) = get_index_manager(&profile_id) {
+                let prefix_str = prefix.as_deref().unwrap_or("");
+                let _ = index_mgr.update_from_list_response(&bucket, prefix_str, response);
+
+                // If sync_index is enabled and this is the first page (complete view of prefix),
+                // remove any objects from the index that are no longer on S3
+                if sync_index.unwrap_or(false)
+                    && continuation_token.is_none()
+                    && !response.is_truncated
+                {
+                    // We have all objects for this prefix - sync the index
+                    let current_keys: Vec<String> =
+                        response.objects.iter().map(|o| o.key.clone()).collect();
+                    if let Err(e) =
+                        index_mgr.sync_prefix_objects(&bucket, prefix_str, &current_keys)
+                    {
+                        eprintln!("Warning: Failed to sync index for prefix '{}': {}", prefix_str, e);
+                    }
+                }
+            }
         }
         Err(e) => {
             ctx.emit_error(&app, &e.to_string());
@@ -380,8 +450,23 @@ pub async fn put_object(
         .await
         .map_err(|e| e.to_string())?;
 
-    let result = adapter.put_object(&bucket, &key, content, content_type).await;
+    let result = adapter.put_object(&bucket, &key, content, content_type.clone()).await;
     ctx.emit_result(&app, &result);
+
+    // Add object to index after successful upload
+    if result.is_ok() {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            let obj = S3Object {
+                key: key.clone(),
+                size: content_len as i64,
+                last_modified: Some(chrono::Utc::now().to_rfc3339()),
+                storage_class: Some("STANDARD".to_string()),
+                e_tag: None,
+                is_folder: false,
+            };
+            let _ = index_mgr.add_object(&bucket, &obj);
+        }
+    }
 
     result.map_err(|e| e.to_string())
 }
@@ -411,6 +496,13 @@ pub async fn delete_object(
 
     let result = adapter.delete_object(&bucket, &key).await;
     ctx.emit_result(&app, &result);
+
+    // Remove object from index after successful deletion
+    if result.is_ok() {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            let _ = index_mgr.remove_object(&bucket, &key);
+        }
+    }
 
     result.map_err(|e| e.to_string())
 }
@@ -444,6 +536,30 @@ pub async fn copy_object(
         .copy_object(&source_bucket, &source_key, &dest_bucket, &dest_key)
         .await;
     ctx.emit_result(&app, &result);
+
+    // Add new object to index after successful copy
+    if result.is_ok() {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            // Try to get source object info from index, use defaults if not found
+            let (size, storage_class) = index_mgr
+                .db
+                .get_object(&source_bucket, &source_key)
+                .ok()
+                .flatten()
+                .map(|o| (o.size, o.storage_class))
+                .unwrap_or((0, "STANDARD".to_string()));
+
+            let new_obj = S3Object {
+                key: dest_key.clone(),
+                size,
+                last_modified: Some(chrono::Utc::now().to_rfc3339()),
+                storage_class: Some(storage_class),
+                e_tag: None,
+                is_folder: dest_key.ends_with('/'),
+            };
+            let _ = index_mgr.add_object(&dest_bucket, &new_obj);
+        }
+    }
 
     result.map_err(|e| e.to_string())
 }
@@ -507,6 +623,21 @@ pub async fn create_folder(
     let result = adapter.create_folder(&bucket, &validated_path).await;
     ctx.emit_result(&app, &result);
 
+    // Add folder to index after successful creation
+    if result.is_ok() {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            let folder_obj = S3Object {
+                key: validated_path.clone(),
+                size: 0,
+                last_modified: Some(chrono::Utc::now().to_rfc3339()),
+                storage_class: Some("STANDARD".to_string()),
+                e_tag: None,
+                is_folder: true,
+            };
+            let _ = index_mgr.add_object(&bucket, &folder_obj);
+        }
+    }
+
     result.map_err(|e| e.to_string())
 }
 
@@ -553,15 +684,28 @@ pub async fn generate_presigned_url(
 }
 
 /// Calculate folder size by summing ALL objects in the prefix (including all subdirectories recursively)
-/// Note: This makes multiple ListObjectsV2 calls (one per 1000 objects)
+/// Returns (size, is_estimate) where is_estimate=true if from incomplete index
+/// Note: Uses index if available, otherwise makes multiple ListObjectsV2 calls
 #[tauri::command]
 pub async fn calculate_folder_size(
     app: AppHandle,
     profile_id: String,
     bucket: String,
     prefix: String,
+    force_refresh: Option<bool>,
     state: State<'_, AppState>,
-) -> Result<i64, String> {
+) -> Result<(i64, bool), String> {
+    // Try index first unless force_refresh is requested
+    if !force_refresh.unwrap_or(false) {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            if let Ok((size, is_complete)) = index_mgr.calculate_folder_size(&bucket, &prefix) {
+                // Return size from index with is_estimate flag
+                return Ok((size, !is_complete));
+            }
+        }
+    }
+
+    // Fallback to S3 calculation
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
         store.get(&profile_id).map_err(|e| e.to_string())?
@@ -600,7 +744,8 @@ pub async fn calculate_folder_size(
         }
     }
 
-    result.map(|(size, _)| size).map_err(|e| e.to_string())
+    // Return (size, is_estimate=false) since we got complete data from S3
+    result.map(|(size, _)| (size, false)).map_err(|e| e.to_string())
 }
 
 /// Delete a folder and all its contents
@@ -661,6 +806,13 @@ pub async fn delete_folder(
                 .with_bucket(&bucket)
                 .with_object_key(&prefix);
             ctx.emit_error(&app, &e.to_string());
+        }
+    }
+
+    // Remove folder from index after successful deletion
+    if let Ok((_, _, _)) = &result {
+        if let Ok(index_mgr) = get_index_manager(&profile_id) {
+            let _ = index_mgr.remove_folder(&bucket, &prefix);
         }
     }
 
@@ -775,6 +927,11 @@ pub async fn upload_file(
         },
     );
 
+    // Clone values for use after perform_upload
+    let profile_id_for_index = profile.id.clone();
+    let bucket_for_index = bucket.clone();
+    let key_for_index = key.clone();
+
     // Spawn background upload task
     let handle = tokio::spawn(async move {
         // Emit starting event
@@ -810,6 +967,19 @@ pub async fn upload_file(
         .await
         {
             Ok(_) => {
+                // Add object to index after successful upload
+                if let Ok(index_mgr) = get_index_manager(&profile_id_for_index) {
+                    let obj = S3Object {
+                        key: key_for_index.clone(),
+                        size: file_size as i64,
+                        last_modified: Some(chrono::Utc::now().to_rfc3339()),
+                        storage_class: Some("STANDARD".to_string()),
+                        e_tag: None,
+                        is_folder: false,
+                    };
+                    let _ = index_mgr.add_object(&bucket_for_index, &obj);
+                }
+
                 // Emit completion event
                 let _ = app.emit_all(
                     "upload:progress",
@@ -1260,4 +1430,261 @@ pub async fn update_object_metadata(
 
     ctx.emit_result(&app, &result);
     result.map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Index Management Commands
+// ============================================================================
+
+/// Start initial indexation of a bucket
+/// Makes up to max_requests ListObjectsV2 calls without delimiter
+#[tauri::command]
+pub async fn start_initial_index(
+    app: AppHandle,
+    profile_id: String,
+    bucket_name: String,
+    max_requests: Option<u32>,
+    batch_size: Option<i32>,
+    state: State<'_, AppState>,
+) -> Result<InitialIndexResult, String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    // Use batch_size from parameter or default to 1000 (S3 max)
+    let effective_batch_size = batch_size.unwrap_or(1000).min(1000).max(1);
+
+    // Emit starting event
+    let _ = app.emit_all(
+        "index:progress",
+        IndexProgressEvent {
+            profile_id: profile_id.clone(),
+            bucket_name: bucket_name.clone(),
+            objects_indexed: 0,
+            requests_made: 0,
+            max_requests: max_requests.unwrap_or(20),
+            is_complete: false,
+            status: IndexStatus::Starting,
+            error: None,
+        },
+    );
+
+    // Get index manager
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+
+    // Create adapter
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Configure indexation
+    let config = IndexingConfig {
+        max_initial_requests: max_requests.unwrap_or(20),
+        batch_size: effective_batch_size,
+        stale_ttl_hours: 24,
+    };
+
+    // Emit indexing event
+    let _ = app.emit_all(
+        "index:progress",
+        IndexProgressEvent {
+            profile_id: profile_id.clone(),
+            bucket_name: bucket_name.clone(),
+            objects_indexed: 0,
+            requests_made: 0,
+            max_requests: config.max_initial_requests,
+            is_complete: false,
+            status: IndexStatus::Indexing,
+            error: None,
+        },
+    );
+
+    // Run initial indexation
+    let result = index_mgr
+        .initial_index_bucket(&adapter, &bucket_name, &config)
+        .await;
+
+    match &result {
+        Ok(index_result) => {
+            let status = if index_result.is_complete {
+                IndexStatus::Completed
+            } else {
+                IndexStatus::Partial
+            };
+
+            let _ = app.emit_all(
+                "index:progress",
+                IndexProgressEvent {
+                    profile_id: profile_id.clone(),
+                    bucket_name: bucket_name.clone(),
+                    objects_indexed: index_result.total_indexed,
+                    requests_made: index_result.requests_made,
+                    max_requests: config.max_initial_requests,
+                    is_complete: index_result.is_complete,
+                    status,
+                    error: None,
+                },
+            );
+        }
+        Err(e) => {
+            let _ = app.emit_all(
+                "index:progress",
+                IndexProgressEvent {
+                    profile_id: profile_id.clone(),
+                    bucket_name: bucket_name.clone(),
+                    objects_indexed: 0,
+                    requests_made: 0,
+                    max_requests: config.max_initial_requests,
+                    is_complete: false,
+                    status: IndexStatus::Failed,
+                    error: Some(e.to_string()),
+                },
+            );
+        }
+    }
+
+    result.map_err(|e| e.to_string())
+}
+
+/// Get bucket statistics from local index
+#[tauri::command]
+pub async fn get_bucket_index_stats(
+    profile_id: String,
+    bucket_name: String,
+) -> Result<BucketIndexStats, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .get_bucket_stats(&bucket_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Get prefix (folder) statistics from local index
+#[tauri::command]
+pub async fn get_prefix_index_stats(
+    profile_id: String,
+    bucket_name: String,
+    prefix: String,
+) -> Result<PrefixStats, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .get_prefix_stats(&bucket_name, &prefix)
+        .map_err(|e| e.to_string())
+}
+
+/// Clear bucket index (for re-indexation)
+#[tauri::command]
+pub async fn clear_bucket_index(profile_id: String, bucket_name: String) -> Result<(), String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .clear_bucket_index(&bucket_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Check if a bucket has been indexed
+#[tauri::command]
+pub async fn is_bucket_indexed(profile_id: String, bucket_name: String) -> Result<bool, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .is_bucket_indexed(&bucket_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Check if bucket index is complete
+#[tauri::command]
+pub async fn is_bucket_index_complete(
+    profile_id: String,
+    bucket_name: String,
+) -> Result<bool, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .is_bucket_complete(&bucket_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Check if a prefix has any objects in the index (has been browsed/indexed before)
+/// Returns true if the prefix has at least one object indexed, false otherwise
+#[tauri::command]
+pub async fn is_prefix_known(
+    profile_id: String,
+    bucket_name: String,
+    prefix: String,
+) -> Result<bool, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+
+    // Check if we have at least one object with this prefix
+    let (count, _) = index_mgr
+        .db
+        .calculate_prefix_stats(&bucket_name, &prefix)
+        .map_err(|e| e.to_string())?;
+
+    Ok(count > 0)
+}
+
+/// Get the full status of a prefix from the index
+/// Returns None if the prefix has never been seen
+#[tauri::command]
+pub async fn get_prefix_status(
+    profile_id: String,
+    bucket_name: String,
+    prefix: String,
+) -> Result<Option<PrefixStatus>, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .get_prefix_status(&bucket_name, &prefix)
+        .map_err(|e| e.to_string())
+}
+
+/// Check if a prefix is "discovered only" (seen in common_prefixes but never navigated into)
+/// Returns true if the prefix exists in prefix_status but has objects_count = 0 and is not complete
+#[tauri::command]
+pub async fn is_prefix_discovered_only(
+    profile_id: String,
+    bucket_name: String,
+    prefix: String,
+) -> Result<bool, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+
+    match index_mgr
+        .get_prefix_status(&bucket_name, &prefix)
+        .map_err(|e| e.to_string())?
+    {
+        None => Ok(true), // Not in index at all = discovered only (or never seen)
+        Some(status) => {
+            // Discovered only if objects_count = 0 and not marked complete
+            Ok(status.objects_count == 0 && !status.is_complete)
+        }
+    }
+}
+
+/// Search objects in the index
+#[tauri::command]
+pub async fn search_objects_in_index(
+    profile_id: String,
+    bucket_name: String,
+    query: String,
+    prefix: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<S3Object>, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .search_objects(&bucket_name, &query, prefix.as_deref(), limit)
+        .map_err(|e| e.to_string())
+}
+
+/// Get all bucket indexes for a profile
+#[tauri::command]
+pub async fn get_all_bucket_indexes(
+    profile_id: String,
+) -> Result<Vec<BucketIndexMetadata>, String> {
+    let index_mgr = get_index_manager(&profile_id).map_err(|e| e.to_string())?;
+    index_mgr
+        .get_all_bucket_indexes()
+        .map_err(|e| e.to_string())
+}
+
+/// Get the index database file size on disk for a profile (in bytes)
+#[tauri::command]
+pub async fn get_index_file_size(profile_id: String) -> Result<u64, String> {
+    DatabaseManager::get_db_file_size(&profile_id).map_err(|e| e.to_string())
 }

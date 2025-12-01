@@ -377,6 +377,27 @@
                   <span class="text-sm text-muted-foreground">{{ t('objects') }}</span>
                 </div>
               </div>
+
+              <!-- Max Initial Index Requests Setting -->
+              <div class="space-y-3">
+                <div>
+                  <label class="text-sm font-medium">{{ t('maxInitialIndexRequests') }}</label>
+                  <p class="text-sm text-muted-foreground">{{
+                    t('maxInitialIndexRequestsDescription')
+                  }}</p>
+                </div>
+                <div class="flex items-center gap-2 max-w-xs">
+                  <Input
+                    type="number"
+                    :model-value="settingsStore.maxInitialIndexRequests"
+                    @change="(e: Event) => settingsStore.setMaxInitialIndexRequests(Number((e.target as HTMLInputElement).value))"
+                    min="1"
+                    max="100"
+                    class="flex-1"
+                  />
+                  <span class="text-sm text-muted-foreground">{{ t('requests') }}</span>
+                </div>
+              </div>
             </div>
 
             <!-- All Indexes Section -->
@@ -412,7 +433,7 @@
                     <th class="text-left py-2 px-3 font-medium">{{ t('connection') }}</th>
                     <th class="text-left py-2 px-3 font-medium">{{ t('bucket') }}</th>
                     <th class="text-right py-2 px-3 font-medium">{{ t('objects') }}</th>
-                    <th class="text-right py-2 px-3 font-medium">{{ t('size') }}</th>
+                    <th class="text-right py-2 px-3 font-medium">{{ t('indexSize') }}</th>
                     <th class="text-left py-2 px-3 font-medium">{{ t('created') }}</th>
                     <th class="text-center py-2 px-3 font-medium">{{ t('actions') }}</th>
                   </tr>
@@ -426,9 +447,9 @@
                     <td class="py-2 px-3">{{ index.profileName }}</td>
                     <td class="py-2 px-3 font-mono text-xs">{{ index.bucketName }}</td>
                     <td class="text-right py-2 px-3">{{ index.totalObjects.toLocaleString() }}</td>
-                    <td class="text-right py-2 px-3">{{ formatBytes(index.sizeInBytes) }}</td>
+                    <td class="text-right py-2 px-3">{{ formatBytes(index.estimatedIndexSize) }}</td>
                     <td class="py-2 px-3 text-xs text-muted-foreground">
-                      {{ formatIndexDate(index.lastBuilt) }}
+                      {{ index.lastIndexedAt ? formatIndexDate(index.lastIndexedAt) : '-' }}
                     </td>
                     <td class="text-center py-2 px-3">
                       <Button
@@ -483,7 +504,7 @@ import { logger } from '../utils/logger'
 import { useSettingsStore } from '../stores/settings'
 import { useAppStore } from '../stores/app'
 import { useI18n } from '../composables/useI18n'
-import { useSearchIndex } from '../composables/useSearchIndex'
+import { getIndexManager } from '../composables/useIndexManager'
 import { useToast } from '../composables/useToast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -500,7 +521,7 @@ import type { Language, ViewMode, EditorTheme } from '../stores/settings'
 const settingsStore = useSettingsStore()
 const appStore = useAppStore()
 const { t } = useI18n()
-const searchIndex = useSearchIndex()
+const indexManager = getIndexManager()
 const toast = useToast()
 const showSettingsModal = ref(false)
 const showDeleteAllConfirm = ref(false)
@@ -546,29 +567,39 @@ interface IndexTableRow {
   profileName: string
   bucketName: string
   totalObjects: number
-  sizeInBytes: number
-  lastBuilt: number
+  estimatedIndexSize: number // Estimated size of the index data for this bucket
+  lastIndexedAt: number | null
+  isComplete: boolean
 }
 
 const allIndexes = ref<IndexTableRow[]>([])
 
 // Load all indexes for the table
 async function loadAllIndexes() {
-  const indexes = await searchIndex.getAllIndexes()
+  const allRows: IndexTableRow[] = []
 
-  // Map indexes with profile names
-  allIndexes.value = indexes.map((index) => {
-    const profile = appStore.profiles.find((p) => p.id === index.profileId)
-    return {
-      id: `${index.profileId}-${index.bucketName}`,
-      profileId: index.profileId,
-      profileName: profile?.name || t('unknownProfile'),
-      bucketName: index.bucketName,
-      totalObjects: index.totalObjects,
-      sizeInBytes: index.sizeInBytes,
-      lastBuilt: index.lastBuilt,
+  // Fetch indexes from all profiles
+  for (const profile of appStore.profiles) {
+    try {
+      const indexes = await indexManager.getAllIndexes(profile.id)
+      for (const index of indexes) {
+        allRows.push({
+          id: `${profile.id}-${index.bucket_name}`,
+          profileId: profile.id,
+          profileName: profile.name,
+          bucketName: index.bucket_name,
+          totalObjects: index.total_objects,
+          estimatedIndexSize: index.estimated_index_size,
+          lastIndexedAt: index.last_indexed_at,
+          isComplete: index.is_complete,
+        })
+      }
+    } catch (error) {
+      logger.error(`Failed to get indexes for profile ${profile.id}`, error)
     }
-  })
+  }
+
+  allIndexes.value = allRows
 }
 
 // Format bytes to human-readable size
@@ -601,7 +632,7 @@ watch(activeTab, (tab) => {
 // Delete index from table
 async function handleDeleteIndexFromTable(profileId: string, bucketName: string) {
   try {
-    await searchIndex.deleteIndex(profileId, bucketName)
+    await indexManager.clearIndex(profileId, bucketName)
     // Reload the table
     await loadAllIndexes()
   } catch (error) {
@@ -620,7 +651,7 @@ async function confirmDeleteAllIndexes() {
   try {
     // Delete all indexes one by one
     for (const index of allIndexes.value) {
-      await searchIndex.deleteIndex(index.profileId, index.bucketName)
+      await indexManager.clearIndex(index.profileId, index.bucketName)
     }
     // Reload the table
     await loadAllIndexes()

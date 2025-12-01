@@ -6,7 +6,7 @@
       :class="[
         'p-1.5 rounded-md transition-all',
         iconColorClass,
-        isBuilding ? 'animate-pulse' : 'hover:bg-muted',
+        isIndexing ? 'animate-pulse' : 'hover:bg-muted',
       ]"
       v-tooltip="t('searchIndex')"
     >
@@ -49,18 +49,24 @@
           <h3 class="font-medium text-sm">{{ t('searchIndex') }}</h3>
 
           <!-- Index metadata (if exists) -->
-          <div v-if="indexMetadata" class="space-y-2 text-sm">
+          <div v-if="indexStats" class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span class="text-muted-foreground">{{ t('lastUpdated') }}:</span>
-              <span>{{ formatRelativeTime(indexMetadata.lastBuilt) }}</span>
+              <span>{{ indexStats.last_indexed_at ? formatRelativeTime(indexStats.last_indexed_at) : '-' }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">{{ t('objects') }}:</span>
-              <span>{{ indexMetadata.totalObjects.toLocaleString() }}</span>
+              <span>{{ indexStats.total_objects.toLocaleString() }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">{{ t('size') }}:</span>
-              <span>{{ formatBytes(indexMetadata.sizeInBytes) }}</span>
+              <span>{{ formatBytes(indexStats.total_size) }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-muted-foreground">{{ t('status') }}:</span>
+              <span :class="indexStats.is_complete ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'">
+                {{ indexStats.is_complete ? t('complete') : t('partial') }}
+              </span>
             </div>
           </div>
 
@@ -71,7 +77,7 @@
 
           <!-- Building message -->
           <div
-            v-if="isBuilding"
+            v-if="isIndexing"
             class="text-sm text-blue-600 dark:text-blue-400 flex items-center gap-2"
           >
             <svg
@@ -88,33 +94,14 @@
             >
               <path d="M21 12a9 9 0 1 1-6.219-8.56" />
             </svg>
-            <span>{{ t('buildingIndex') }}... {{ searchIndex.buildProgress.value.toLocaleString() }}</span>
+            <span>{{ t('buildingIndex') }}...</span>
           </div>
-        </div>
-
-        <!-- Toggle to enable/disable index -->
-        <div
-          v-if="indexMetadata && !isBuilding"
-          class="flex items-center justify-between pt-3 border-t"
-        >
-          <label class="text-sm font-medium cursor-pointer" :for="`index-toggle-${profileId}-${bucketName}`">
-            {{ t('useIndexForSearch') }}
-          </label>
-          <input
-            :id="`index-toggle-${profileId}-${bucketName}`"
-            type="checkbox"
-            v-model="indexEnabled"
-            @change="handleToggleIndex(indexEnabled)"
-            class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer appearance-none cursor-pointer checked:bg-primary relative
-                   after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5
-                   after:transition-all checked:after:translate-x-full"
-          />
         </div>
 
         <!-- Action buttons -->
         <div class="space-y-2 pt-3 border-t">
           <Button
-            v-if="!isBuilding"
+            v-if="!isIndexing"
             @click="handleRebuildIndex"
             variant="outline"
             size="sm"
@@ -137,11 +124,11 @@
               <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
               <path d="M16 16h5v5" />
             </svg>
-            {{ indexMetadata ? t('rebuildIndex') : t('buildIndex') }}
+            {{ indexStats ? t('rebuildIndex') : t('buildIndex') }}
           </Button>
 
           <Button
-            v-if="indexMetadata && !isBuilding"
+            v-if="indexStats && !isIndexing"
             @click="handleDeleteIndex"
             variant="destructive"
             size="sm"
@@ -174,11 +161,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useSearchIndex } from '../composables/useSearchIndex'
+import { getIndexManager } from '../composables/useIndexManager'
 import { useI18n } from '../composables/useI18n'
-import { useSettingsStore } from '../stores/settings'
 import { Button } from './ui/button'
 import { logger } from '../utils/logger'
+import type { BucketIndexStats } from '../types'
 
 const props = defineProps<{
   profileId: string
@@ -191,18 +178,17 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const searchIndex = useSearchIndex()
-const _settingsStore = useSettingsStore()
+const indexManager = getIndexManager()
 
 const buttonRef = ref<HTMLButtonElement | null>(null)
 const showMenu = ref(false)
 const menuPosition = ref({ top: 0, left: 0 })
-const indexMetadata = ref<{
-  lastBuilt: number
-  totalObjects: number
-  sizeInBytes: number
-} | null>(null)
-const indexEnabled = ref(false)
+const indexStats = ref<BucketIndexStats | null>(null)
+
+// Check if currently indexing
+const isIndexing = computed(() => {
+  return indexManager.isIndexing(props.profileId, props.bucketName)
+})
 
 // Calculate menu position based on button position
 function calculateMenuPosition() {
@@ -229,10 +215,10 @@ function toggleMenu() {
 
 // Icon state computed property
 const iconState = computed(() => {
-  if (searchIndex.isBuilding.value) return 'building' // blue blinking
-  if (!indexMetadata.value) return 'missing' // orange
-  if (indexEnabled.value) return 'active' // green
-  return 'inactive' // gray
+  if (isIndexing.value) return 'building' // blue blinking
+  if (!indexStats.value) return 'missing' // orange
+  if (!indexStats.value.is_complete) return 'partial' // yellow
+  return 'active' // green
 })
 
 // Icon color classes based on state
@@ -242,22 +228,20 @@ const iconColorClass = computed(() => {
       return 'text-blue-500 dark:text-blue-400'
     case 'missing':
       return 'text-orange-500 dark:text-orange-400'
+    case 'partial':
+      return 'text-yellow-500 dark:text-yellow-400'
     case 'active':
       return 'text-green-600 dark:text-green-400'
-    case 'inactive':
-      return 'text-muted-foreground'
     default:
       return 'text-muted-foreground'
   }
 })
 
-const isBuilding = computed(() => searchIndex.isBuilding.value)
-
 // Format bytes to human-readable size
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
 }
@@ -276,21 +260,12 @@ function formatRelativeTime(timestamp: number): string {
   return t('daysAgo', days)
 }
 
-// Load index metadata
-async function loadIndexMetadata() {
+// Load index stats
+async function loadIndexStats() {
   if (!props.profileId || !props.bucketName) return
 
-  const metadata = await searchIndex.getIndexMetadata(props.profileId, props.bucketName)
-  indexMetadata.value = metadata
-
-  // Load enabled state
-  indexEnabled.value = searchIndex.isIndexEnabled(props.profileId, props.bucketName)
-}
-
-// Handle toggle index enabled/disabled
-function handleToggleIndex(enabled: boolean) {
-  searchIndex.setIndexEnabled(props.profileId, props.bucketName, enabled)
-  emit('indexChanged')
+  const stats = await indexManager.getIndexStats(props.profileId, props.bucketName)
+  indexStats.value = stats
 }
 
 // Handle rebuild index
@@ -300,11 +275,13 @@ async function handleRebuildIndex() {
   showMenu.value = false
 
   try {
-    await searchIndex.rebuildIndex(
-      props.profileId,
-      props.bucketName
-    )
-    await loadIndexMetadata()
+    // Clear existing index first if it exists
+    if (indexStats.value) {
+      await indexManager.clearIndex(props.profileId, props.bucketName)
+    }
+    // Start new indexing
+    await indexManager.startIndexing(props.profileId, props.bucketName)
+    await loadIndexStats()
     emit('indexChanged')
   } catch (error) {
     logger.error('Error rebuilding index', error)
@@ -317,8 +294,8 @@ async function handleDeleteIndex() {
 
   showMenu.value = false
 
-  await searchIndex.deleteIndex(props.profileId, props.bucketName)
-  indexMetadata.value = null
+  await indexManager.clearIndex(props.profileId, props.bucketName)
+  indexStats.value = null
   emit('indexChanged')
 }
 
@@ -326,23 +303,24 @@ async function handleDeleteIndex() {
 watch(
   () => [props.profileId, props.bucketName],
   () => {
-    loadIndexMetadata()
+    loadIndexStats()
   },
   { immediate: true }
 )
 
-// Watch for build completion
+// Watch for indexing completion
 watch(
-  () => searchIndex.isBuilding.value,
-  (newVal, oldVal) => {
-    // When building finishes, reload metadata
-    if (oldVal && !newVal) {
-      loadIndexMetadata()
+  () => indexManager.indexingBuckets.value,
+  () => {
+    // When indexing finishes, reload stats
+    if (!isIndexing.value) {
+      loadIndexStats()
     }
-  }
+  },
+  { deep: true }
 )
 
 onMounted(() => {
-  loadIndexMetadata()
+  loadIndexStats()
 })
 </script>

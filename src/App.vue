@@ -21,6 +21,9 @@
 
       <!-- Upload Progress (Rust-managed) -->
       <RustUploadProgress />
+
+      <!-- Index Progress -->
+      <IndexProgress />
     </div>
   </TooltipProvider>
 </template>
@@ -30,6 +33,7 @@ import { RouterView } from 'vue-router'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import RustUploadProgress from './components/RustUploadProgress.vue'
+import IndexProgress from './components/IndexProgress.vue'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useDialog } from './composables/useDialog'
 

@@ -132,12 +132,13 @@ export const translations = {
     renaming: 'Renaming...',
     loading: 'Loading...',
     calculating: 'Calculating...',
-    calculateStats: 'Calculate Stats',
-    estimate: 'Estimate',
-    calculate: 'Calculate',
-    quickEstimate: 'Quick estimate (1 request)',
-    estimateTooltip: 'Estimate based on first 1000 objects',
-    fullCalculation: 'Full calculation (may take time)',
+    indexIncompleteTooltip: 'Index incomplete - stats are partial',
+    estimateTooltip: 'Size is an estimate - index incomplete for this folder',
+    indexingInProgress: 'Indexing in progress...',
+    requests: 'requests',
+    status: 'Status',
+    complete: 'Complete',
+    partial: 'Partial',
     saving: 'Saving...',
     unsavedChanges: 'Unsaved Changes',
     unsavedChangesMessage: 'You have unsaved changes. Are you sure you want to discard them?',
@@ -307,6 +308,8 @@ export const translations = {
     indexValidityHoursDescription: 'Time before a local index is considered outdated and needs refresh (1-48 hours)',
     indexAutoBuildThreshold: 'Auto-Build Threshold',
     indexAutoBuildThresholdDescription: 'Buckets with fewer objects than this will automatically build/rebuild their local index (100-100000)',
+    maxInitialIndexRequests: 'Max Initial Index Requests',
+    maxInitialIndexRequestsDescription: 'Maximum number of S3 requests for initial bucket indexing. Higher values index more objects but take longer (1-100)',
     hours: 'hours',
 
     // Pagination
@@ -524,12 +527,12 @@ export const translations = {
     renaming: 'Renommage...',
     loading: 'Chargement...',
     calculating: 'Calcul...',
-    calculateStats: 'Calculer les stats',
-    estimate: 'Estimer',
-    calculate: 'Calculer',
-    quickEstimate: 'Estimation rapide (1 requête)',
-    estimateTooltip: 'Estimation basée sur les 1000 premiers objets',
-    fullCalculation: 'Calcul complet (peut prendre du temps)',
+    indexIncompleteTooltip: 'Index incomplet - les stats sont partielles',
+    indexingInProgress: 'Indexation en cours...',
+    requests: 'requêtes',
+    status: 'Statut',
+    complete: 'Complet',
+    partial: 'Partiel',
     saving: 'Enregistrement...',
     unsavedChanges: 'Modifications non enregistrées',
     unsavedChangesMessage: 'Vous avez des modifications non enregistrées. Voulez-vous vraiment les abandonner ?',
@@ -702,6 +705,8 @@ export const translations = {
     indexValidityHoursDescription: 'Durée avant qu\'un index local soit considéré comme obsolète et nécessite une actualisation (1-48 heures)',
     indexAutoBuildThreshold: 'Seuil de construction automatique',
     indexAutoBuildThresholdDescription: 'Les buckets avec moins d\'objets que ce seuil construiront/reconstruiront automatiquement leur index local (100-100000)',
+    maxInitialIndexRequests: 'Requêtes d\'indexation initiales max',
+    maxInitialIndexRequestsDescription: 'Nombre maximum de requêtes S3 pour l\'indexation initiale d\'un bucket. Des valeurs plus élevées indexent plus d\'objets mais prennent plus de temps (1-100)',
     hours: 'heures',
 
     // Pagination
@@ -1776,6 +1781,9 @@ export const translations = {
     indexValidityHoursDescription: 'Tiempo antes de que un índice local se considere desactualizado y necesite actualización (1-48 horas)',
     indexAutoBuildThreshold: 'Umbral de construcción automática',
     indexAutoBuildThresholdDescription: 'Los buckets con menos objetos que este valor construirán/reconstruirán automáticamente su índice local (100-100000)',
+    maxInitialIndexRequests: 'Solicitudes iniciales de indexación máx.',
+    maxInitialIndexRequestsDescription: 'Número máximo de solicitudes S3 para la indexación inicial del bucket. Valores más altos indexan más objetos pero tardan más (1-100)',
+    requests: 'solicitudes',
     hours: 'horas',
 
     // Paginación
@@ -2132,6 +2140,9 @@ export const translations = {
     indexValidityHoursDescription: 'الوقت قبل أن يُعتبر الفهرس المحلي قديماً ويحتاج إلى تحديث (1-48 ساعة)',
     indexAutoBuildThreshold: 'عتبة البناء التلقائي',
     indexAutoBuildThresholdDescription: 'الحاويات التي تحتوي على كائنات أقل من هذا العدد ستقوم ببناء/إعادة بناء فهرسها المحلي تلقائياً (100-100000)',
+    maxInitialIndexRequests: 'الحد الأقصى لطلبات الفهرسة الأولية',
+    maxInitialIndexRequestsDescription: 'الحد الأقصى لعدد طلبات S3 للفهرسة الأولية للحاوية. القيم الأعلى تفهرس المزيد من الكائنات لكنها تستغرق وقتاً أطول (1-100)',
+    requests: 'طلبات',
     hours: 'ساعات',
 
     // الترقيم
@@ -2488,6 +2499,9 @@ export const translations = {
     indexValidityHoursDescription: 'স্থানীয় সূচক পুরানো বলে বিবেচিত হওয়ার এবং রিফ্রেশ প্রয়োজন হওয়ার আগের সময় (1-48 ঘণ্টা)',
     indexAutoBuildThreshold: 'অটো-বিল্ড থ্রেশহোল্ড',
     indexAutoBuildThresholdDescription: 'এর চেয়ে কম অবজেক্ট সহ বাকেটগুলি স্বয়ংক্রিয়ভাবে তাদের স্থানীয় সূচক তৈরি/পুনর্নির্মাণ করবে (100-100000)',
+    maxInitialIndexRequests: 'সর্বোচ্চ প্রাথমিক সূচক অনুরোধ',
+    maxInitialIndexRequestsDescription: 'প্রাথমিক বাকেট সূচীকরণের জন্য সর্বোচ্চ S3 অনুরোধের সংখ্যা। উচ্চ মান বেশি অবজেক্ট সূচীকরণ করে কিন্তু বেশি সময় নেয় (1-100)',
+    requests: 'অনুরোধ',
     hours: 'ঘণ্টা',
 
     // পৃষ্ঠাবিভাজন
@@ -2844,6 +2858,9 @@ export const translations = {
     indexValidityHoursDescription: 'Tempo antes de um índice local ser considerado desatualizado e precisar de atualização (1-48 horas)',
     indexAutoBuildThreshold: 'Limite de construção automática',
     indexAutoBuildThresholdDescription: 'Buckets com menos objetos que este valor construirão/reconstruirão automaticamente seu índice local (100-100000)',
+    maxInitialIndexRequests: 'Máx. solicitações de indexação inicial',
+    maxInitialIndexRequestsDescription: 'Número máximo de solicitações S3 para indexação inicial do bucket. Valores mais altos indexam mais objetos, mas demoram mais (1-100)',
+    requests: 'solicitações',
     hours: 'horas',
 
     // Paginação
@@ -3200,6 +3217,9 @@ export const translations = {
     indexValidityHoursDescription: 'Waktu sebelum indeks lokal dianggap kedaluwarsa dan perlu diperbarui (1-48 jam)',
     indexAutoBuildThreshold: 'Ambang Batas Pembuatan Otomatis',
     indexAutoBuildThresholdDescription: 'Bucket dengan objek lebih sedikit dari ini akan secara otomatis membangun/membangun ulang indeks lokalnya (100-100000)',
+    maxInitialIndexRequests: 'Permintaan Indeks Awal Maksimal',
+    maxInitialIndexRequestsDescription: 'Jumlah maksimal permintaan S3 untuk pengindeksan bucket awal. Nilai lebih tinggi mengindeks lebih banyak objek tetapi memakan waktu lebih lama (1-100)',
+    requests: 'permintaan',
     hours: 'jam',
 
     // Pagination
@@ -3556,6 +3576,9 @@ export const translations = {
     indexValidityHoursDescription: 'Timp înainte ca un index local să fie considerat învechit și să necesite reîmprospătare (1-48 ore)',
     indexAutoBuildThreshold: 'Prag construire automată',
     indexAutoBuildThresholdDescription: 'Bucket-urile cu mai puține obiecte decât această valoare vor construi/reconstrui automat indexul lor local (100-100000)',
+    maxInitialIndexRequests: 'Cereri maxime de indexare inițială',
+    maxInitialIndexRequestsDescription: 'Numărul maxim de cereri S3 pentru indexarea inițială a bucket-ului. Valorile mai mari indexează mai multe obiecte dar durează mai mult (1-100)',
+    requests: 'cereri',
     hours: 'ore',
 
     // Paginare

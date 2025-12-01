@@ -214,7 +214,8 @@ export const useAppStore = defineStore('app', () => {
         currentPrefix.value || undefined,
         continuationToken.value,
         settingsStore.batchSize,
-        true
+        true, // useDelimiter
+        false // syncIndex = false for preload (don't trigger cleanup)
       )
 
       preloadedNextPage.value = {
@@ -287,7 +288,8 @@ export const useAppStore = defineStore('app', () => {
         currentPrefix.value || undefined,
         loadMore ? continuationToken.value : undefined,
         settingsStore.batchSize, // Use batch size from settings
-        true // Use delimiter for folder navigation
+        true, // Use delimiter for folder navigation
+        !loadMore // syncIndex = true only for first page to cleanup phantom objects
       )
 
       if (loadMore) {

@@ -22,6 +22,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const multipartThresholdMB = ref(20) // MB - files larger than this use multipart upload
   const indexValidityHours = ref(8) // hours - index older than this is considered expired
   const indexAutoBuildThreshold = ref(12000) // objects - buckets with fewer objects auto-build index
+  const maxInitialIndexRequests = ref(20) // requests - max S3 requests for initial bucket indexing (1-100)
   const bucketStatsCacheTTLHours = ref(24) // hours - bucket stats cache TTL (default: 24h)
   const previewWarningLimitMB = ref(10) // MB - files larger than this show warning before loading
   const previewMaxLimitMB = ref(80) // MB - files larger than this cannot be previewed
@@ -107,6 +108,14 @@ export const useSettingsStore = defineStore('settings', () => {
       const threshold = parseInt(savedIndexAutoBuildThreshold, 10)
       if (!isNaN(threshold) && threshold >= 100 && threshold <= 100000) {
         indexAutoBuildThreshold.value = threshold
+      }
+    }
+
+    const savedMaxInitialIndexRequests = localStorage.getItem('app-maxInitialIndexRequests')
+    if (savedMaxInitialIndexRequests) {
+      const requests = parseInt(savedMaxInitialIndexRequests, 10)
+      if (!isNaN(requests) && requests >= 1 && requests <= 100) {
+        maxInitialIndexRequests.value = requests
       }
     }
 
@@ -225,6 +234,15 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-indexAutoBuildThreshold', String(threshold))
   }
 
+  // Save max initial index requests to localStorage
+  const setMaxInitialIndexRequests = (requests: number) => {
+    if (isNaN(requests) || requests < 1 || requests > 100) {
+      return // Silently ignore invalid values
+    }
+    maxInitialIndexRequests.value = requests
+    localStorage.setItem('app-maxInitialIndexRequests', String(requests))
+  }
+
   // Save bucket stats cache TTL to localStorage
   const setBucketStatsCacheTTLHours = (hours: number) => {
     if (isNaN(hours) || hours < 1 || hours > 168) {
@@ -302,6 +320,7 @@ export const useSettingsStore = defineStore('settings', () => {
     multipartThresholdMB,
     indexValidityHours,
     indexAutoBuildThreshold,
+    maxInitialIndexRequests,
     bucketStatsCacheTTLHours,
     previewWarningLimitMB,
     previewMaxLimitMB,
@@ -315,6 +334,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setMultipartThresholdMB,
     setIndexValidityHours,
     setIndexAutoBuildThreshold,
+    setMaxInitialIndexRequests,
     setBucketStatsCacheTTLHours,
     setPreviewWarningLimitMB,
     setPreviewMaxLimitMB,
