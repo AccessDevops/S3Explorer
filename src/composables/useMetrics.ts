@@ -5,7 +5,7 @@
  * Provides reactive access to metrics data for the dashboard.
  */
 
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { metricsStorage } from '@/services/metricsStorage'
 import type {

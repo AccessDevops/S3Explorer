@@ -14,7 +14,6 @@ import type {
   HourlyStats,
   S3Operation,
   S3ErrorCategory,
-  RequestCategory,
   S3Pricing,
   CacheEvent,
   DailyCacheStats,

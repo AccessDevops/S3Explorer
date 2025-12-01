@@ -2080,11 +2080,11 @@ const sortBy = ref<SortColumn>('name')
 const sortOrder = ref<SortOrder>('asc')
 
 // Modal refs (already using modals grouped state, but some legacy refs)
-const showRenameModal = ref(false)
+const _showRenameModal = ref(false)
 
 // Rename refs (already using rename grouped state)
-const renamingObject = ref<S3Object | null>(null)
-const newFileName = ref('')
+const _renamingObject = ref<S3Object | null>(null)
+const _newFileName = ref('')
 
 // Content type changing ref
 const changingContentType = ref(false)

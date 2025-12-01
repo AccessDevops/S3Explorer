@@ -223,7 +223,9 @@ pub async fn calculate_bucket_stats(
         }
     }
 
-    result.map(|(size, count, _)| (size, count)).map_err(|e| e.to_string())
+    result
+        .map(|(size, count, _)| (size, count))
+        .map_err(|e| e.to_string())
 }
 
 /// Estimate bucket statistics (fast - only first 1000 objects)
@@ -266,6 +268,7 @@ pub async fn estimate_bucket_stats(
 
 /// List objects in a bucket
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn list_objects(
     app: AppHandle,
     profile_id: String,
@@ -380,7 +383,9 @@ pub async fn put_object(
         .await
         .map_err(|e| e.to_string())?;
 
-    let result = adapter.put_object(&bucket, &key, content, content_type).await;
+    let result = adapter
+        .put_object(&bucket, &key, content, content_type)
+        .await;
     ctx.emit_result(&app, &result);
 
     result.map_err(|e| e.to_string())
@@ -472,7 +477,9 @@ pub async fn change_content_type(
         .await
         .map_err(|e| e.to_string())?;
 
-    let result = adapter.change_content_type(&bucket, &key, &new_content_type).await;
+    let result = adapter
+        .change_content_type(&bucket, &key, &new_content_type)
+        .await;
     ctx.emit_result(&app, &result);
 
     result.map_err(|e| e.to_string())
@@ -488,7 +495,8 @@ pub async fn create_folder(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
-    let validated_path = validation::validate_folder_path(&folder_path).map_err(|e| e.to_string())?;
+    let validated_path =
+        validation::validate_folder_path(&folder_path).map_err(|e| e.to_string())?;
 
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
@@ -646,12 +654,13 @@ pub async fn delete_folder(
             // Emit metrics for DeleteObjects calls
             let objects_per_delete = (*deleted_count as u32) / (*delete_request_count).max(1);
             for _ in 0..*delete_request_count {
-                let event = S3MetricsEvent::new(S3Operation::DeleteObjects, RequestCategory::DELETE)
-                    .with_duration(avg_duration)
-                    .with_profile(&profile.id, &profile.name)
-                    .with_bucket(&bucket)
-                    .with_object_key(&prefix)
-                    .with_objects_affected(objects_per_delete);
+                let event =
+                    S3MetricsEvent::new(S3Operation::DeleteObjects, RequestCategory::DELETE)
+                        .with_duration(avg_duration)
+                        .with_profile(&profile.id, &profile.name)
+                        .with_bucket(&bucket)
+                        .with_object_key(&prefix)
+                        .with_objects_affected(objects_per_delete);
                 crate::metrics::emit_metrics(&app, event);
             }
         }
@@ -976,10 +985,11 @@ async fn perform_upload(
         let total_parts = file_size.div_ceil(PART_SIZE) as i32;
 
         // Start multipart upload with metrics
-        let init_ctx = MetricsContext::new(S3Operation::CreateMultipartUpload, RequestCategory::PUT)
-            .with_profile(&profile.id, &profile.name)
-            .with_bucket(&bucket)
-            .with_object_key(&key);
+        let init_ctx =
+            MetricsContext::new(S3Operation::CreateMultipartUpload, RequestCategory::PUT)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&key);
 
         let init_result = adapter
             .multipart_upload_start(&bucket, &key, content_type)
@@ -999,10 +1009,11 @@ async fn perform_upload(
             // Check for cancellation before each part
             if cancel_rx.try_recv().is_ok() {
                 // Abort the multipart upload with metrics
-                let abort_ctx = MetricsContext::new(S3Operation::AbortMultipartUpload, RequestCategory::PUT)
-                    .with_profile(&profile.id, &profile.name)
-                    .with_bucket(&bucket)
-                    .with_object_key(&key);
+                let abort_ctx =
+                    MetricsContext::new(S3Operation::AbortMultipartUpload, RequestCategory::PUT)
+                        .with_profile(&profile.id, &profile.name)
+                        .with_bucket(&bucket)
+                        .with_object_key(&key);
 
                 let abort_result = adapter
                     .multipart_upload_abort(&bucket, &key, &s3_upload_id)
@@ -1069,10 +1080,11 @@ async fn perform_upload(
         }
 
         // Complete multipart upload with metrics
-        let complete_ctx = MetricsContext::new(S3Operation::CompleteMultipartUpload, RequestCategory::PUT)
-            .with_profile(&profile.id, &profile.name)
-            .with_bucket(&bucket)
-            .with_object_key(&key);
+        let complete_ctx =
+            MetricsContext::new(S3Operation::CompleteMultipartUpload, RequestCategory::PUT)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&key);
 
         let complete_result = adapter
             .multipart_upload_complete(&bucket, &key, &s3_upload_id, completed_parts)

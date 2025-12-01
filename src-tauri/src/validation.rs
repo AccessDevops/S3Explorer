@@ -136,9 +136,8 @@ pub fn validate_endpoint(endpoint: &str) -> Result<Option<String>, AppError> {
     }
 
     // Try to parse as URL
-    let url = url::Url::parse(endpoint).map_err(|_| {
-        AppError::ValidationError("Invalid endpoint URL format".into())
-    })?;
+    let url = url::Url::parse(endpoint)
+        .map_err(|_| AppError::ValidationError("Invalid endpoint URL format".into()))?;
 
     // Check protocol
     match url.scheme() {
@@ -160,7 +159,11 @@ pub fn validate_endpoint(endpoint: &str) -> Result<Option<String>, AppError> {
     // Return warning for HTTP on non-localhost
     if url.scheme() == "http" {
         if let Some(host) = url.host_str() {
-            if host != "localhost" && host != "127.0.0.1" && !host.starts_with("192.168.") && !host.starts_with("10.") {
+            if host != "localhost"
+                && host != "127.0.0.1"
+                && !host.starts_with("192.168.")
+                && !host.starts_with("10.")
+            {
                 return Ok(Some(
                     "Warning: Using HTTP with a non-local endpoint. Credentials will be sent unencrypted.".into()
                 ));
@@ -187,9 +190,10 @@ pub fn validate_presigned_url_expiry(seconds: u64) -> Result<(), AppError> {
     }
 
     if seconds > MAX_EXPIRY {
-        return Err(AppError::ValidationError(
-            format!("Presigned URL expiry cannot exceed {} seconds (7 days)", MAX_EXPIRY),
-        ));
+        return Err(AppError::ValidationError(format!(
+            "Presigned URL expiry cannot exceed {} seconds (7 days)",
+            MAX_EXPIRY
+        )));
     }
 
     Ok(())

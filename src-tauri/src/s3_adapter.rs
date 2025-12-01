@@ -1,8 +1,9 @@
 use crate::errors::AppError;
 use crate::models::{
     Bucket, CompletedPart, DeleteObjectError, DeleteObjectsResponse, GetObjectMetadataResponse,
-    GetObjectResponse, ListObjectVersionsResponse, ListObjectsResponse, MultipartUploadInitResponse,
-    MultipartUploadPartResponse, ObjectTag, ObjectVersion, Profile, S3Object, TestConnectionResponse,
+    GetObjectResponse, ListObjectVersionsResponse, ListObjectsResponse,
+    MultipartUploadInitResponse, MultipartUploadPartResponse, ObjectTag, ObjectVersion, Profile,
+    S3Object, TestConnectionResponse,
 };
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::BehaviorVersion;
@@ -231,7 +232,10 @@ impl S3Adapter {
 
     /// Calculate bucket statistics (total size and count) by listing ALL objects without delimiter
     /// Returns (total_size, total_count, request_count) where request_count is the number of API calls made
-    pub async fn calculate_bucket_stats(&self, bucket_name: &str) -> Result<(i64, i64, u32), AppError> {
+    pub async fn calculate_bucket_stats(
+        &self,
+        bucket_name: &str,
+    ) -> Result<(i64, i64, u32), AppError> {
         let mut total_size: i64 = 0;
         let mut total_count: i64 = 0;
         let mut request_count: u32 = 0;
@@ -664,7 +668,11 @@ impl S3Adapter {
     /// This is ~99% more efficient than deleting objects one by one
     /// S3 DeleteObjects supports up to 1000 objects per request
     /// Returns (deleted_count, list_request_count, delete_request_count)
-    pub async fn delete_folder(&self, bucket: &str, prefix: &str) -> Result<(i64, u32, u32), AppError> {
+    pub async fn delete_folder(
+        &self,
+        bucket: &str,
+        prefix: &str,
+    ) -> Result<(i64, u32, u32), AppError> {
         let folder_prefix = if prefix.ends_with('/') {
             prefix.to_string()
         } else {
@@ -723,9 +731,7 @@ impl S3Adapter {
 
         // Also delete the folder marker itself (if it exists)
         // Use batch delete for consistency (single item batch is fine)
-        let _ = self
-            .delete_objects_batch(bucket, vec![folder_prefix])
-            .await;
+        let _ = self.delete_objects_batch(bucket, vec![folder_prefix]).await;
         delete_request_count += 1;
 
         // Return total deleted count (errors are logged but don't fail the operation)

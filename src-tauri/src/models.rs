@@ -401,6 +401,7 @@ pub enum S3Operation {
 
 /// Request category for cost calculation
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum RequestCategory {
     GET,
     PUT,
@@ -546,7 +547,9 @@ pub fn categorize_s3_error(error_str: &str) -> S3ErrorCategory {
         S3ErrorCategory::ExpiredCredentials
     } else if error_lower.contains("access denied") || error_lower.contains("forbidden") {
         S3ErrorCategory::AccessDenied
-    } else if error_lower.contains("nosuchbucket") || error_lower.contains("bucket") && error_lower.contains("not found") {
+    } else if error_lower.contains("nosuchbucket")
+        || error_lower.contains("bucket") && error_lower.contains("not found")
+    {
         S3ErrorCategory::BucketNotFound
     } else if error_lower.contains("nosuchkey") || error_lower.contains("not found") {
         S3ErrorCategory::ObjectNotFound
