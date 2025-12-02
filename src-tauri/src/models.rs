@@ -280,6 +280,31 @@ pub enum UploadStatus {
     Cancelled,
 }
 
+/// Download progress event payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadProgressEvent {
+    pub download_id: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub downloaded_bytes: u64,
+    pub percentage: f64,
+    pub status: DownloadStatus,
+    pub error: Option<String>,
+    pub bytes_per_second: Option<f64>,
+}
+
+/// Download status enum
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadStatus {
+    Pending,
+    Starting,
+    Downloading,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
 /// S3 Object Tag
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectTag {
@@ -375,6 +400,7 @@ pub enum S3Operation {
     // Bucket operations
     ListBuckets,
     CreateBucket,
+    DeleteBucket,
     GetBucketAcl,
     // Object listing
     ListObjectsV2,
@@ -802,6 +828,8 @@ pub struct BucketIndexStats {
     pub is_complete: bool,
     pub storage_class_breakdown: Vec<StorageClassStats>,
     pub last_indexed_at: Option<i64>,
+    /// Estimated size of the index data for this bucket (in bytes)
+    pub estimated_index_size: i64,
 }
 
 /// Statistiques par classe de stockage
@@ -839,6 +867,7 @@ pub enum IndexStatus {
     Completed,
     Partial,
     Failed,
+    Cancelled,
 }
 
 /// Événement de progression d'indexation
@@ -874,4 +903,94 @@ pub struct SearchResult {
     pub total_found: usize,
     pub from_index: bool,
     pub is_complete: bool,
+}
+
+// ============================================================================
+// Bucket Configuration Types (Read-Only)
+// ============================================================================
+
+/// Bucket Policy (JSON document)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketPolicyResponse {
+    pub policy: Option<String>,
+    pub error: Option<String>,
+}
+
+/// CORS Rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CorsRule {
+    pub allowed_headers: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    pub expose_headers: Vec<String>,
+    pub max_age_seconds: Option<i32>,
+}
+
+/// Bucket CORS Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketCorsResponse {
+    pub rules: Vec<CorsRule>,
+    pub error: Option<String>,
+}
+
+/// Lifecycle Transition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleTransition {
+    pub days: Option<i32>,
+    pub date: Option<String>,
+    pub storage_class: String,
+}
+
+/// Lifecycle Rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleRule {
+    pub id: Option<String>,
+    pub status: String,
+    pub filter_prefix: Option<String>,
+    pub expiration_days: Option<i32>,
+    pub expiration_date: Option<String>,
+    pub transitions: Vec<LifecycleTransition>,
+    pub noncurrent_version_expiration_days: Option<i32>,
+    pub abort_incomplete_multipart_days: Option<i32>,
+}
+
+/// Bucket Lifecycle Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketLifecycleResponse {
+    pub rules: Vec<LifecycleRule>,
+    pub error: Option<String>,
+}
+
+/// Bucket Versioning Status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketVersioningResponse {
+    pub status: Option<String>,
+    pub mfa_delete: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Bucket Encryption Rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketEncryptionRule {
+    pub sse_algorithm: String,
+    pub kms_master_key_id: Option<String>,
+    pub bucket_key_enabled: Option<bool>,
+}
+
+/// Bucket Encryption Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketEncryptionResponse {
+    pub rules: Vec<BucketEncryptionRule>,
+    pub error: Option<String>,
+}
+
+/// Complete Bucket Configuration (all settings combined)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketConfigurationResponse {
+    pub policy: BucketPolicyResponse,
+    pub acl: String,
+    pub cors: BucketCorsResponse,
+    pub lifecycle: BucketLifecycleResponse,
+    pub versioning: BucketVersioningResponse,
+    pub encryption: BucketEncryptionResponse,
 }

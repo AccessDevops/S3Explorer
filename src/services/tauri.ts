@@ -16,6 +16,7 @@ import type {
   InitialIndexResult,
   S3Object,
   BucketIndexMetadata,
+  BucketConfigurationResponse,
 } from '../types'
 
 // Profile Management
@@ -44,8 +45,23 @@ export async function createBucket(profileId: string, bucketName: string): Promi
   return await invoke('create_bucket', { profileId, bucketName })
 }
 
+export async function deleteBucket(profileId: string, bucketName: string): Promise<void> {
+  return await invoke('delete_bucket', { profileId, bucketName })
+}
+
+export async function canDeleteBucket(profileId: string, bucketName: string): Promise<boolean> {
+  return await invoke('can_delete_bucket', { profileId, bucketName })
+}
+
 export async function getBucketAcl(profileId: string, bucketName: string): Promise<string> {
   return await invoke('get_bucket_acl', { profileId, bucketName })
+}
+
+export async function getBucketConfiguration(
+  profileId: string,
+  bucketName: string
+): Promise<BucketConfigurationResponse> {
+  return await invoke('get_bucket_configuration', { profileId, bucketName })
 }
 
 export async function calculateBucketStats(
@@ -54,13 +70,6 @@ export async function calculateBucketStats(
   forceRefresh?: boolean
 ): Promise<[number, number, boolean]> {
   return await invoke('calculate_bucket_stats', { profileId, bucketName, forceRefresh })
-}
-
-export async function estimateBucketStats(
-  profileId: string,
-  bucketName: string
-): Promise<[number, number, boolean]> {
-  return await invoke('estimate_bucket_stats', { profileId, bucketName })
 }
 
 // Object Operations
@@ -103,11 +112,13 @@ export async function putObject(
   content: number[] | Uint8Array,
   contentType?: string
 ): Promise<void> {
+  // Convert Uint8Array to regular array for proper Tauri serialization
+  const contentArray = content instanceof Uint8Array ? Array.from(content) : content
   return await invoke('put_object', {
     profileId,
     bucket,
     key,
-    content,
+    content: contentArray,
     contentType,
   })
 }
@@ -246,6 +257,27 @@ export async function cancelUpload(uploadId: string): Promise<void> {
   })
 }
 
+// Download Operations (Rust-managed streaming to disk with progress events)
+export async function downloadFile(
+  profileId: string,
+  bucket: string,
+  key: string,
+  destPath: string
+): Promise<string> {
+  return await invoke('download_file', {
+    profileId,
+    bucket,
+    key,
+    destPath,
+  })
+}
+
+export async function cancelDownload(downloadId: string): Promise<void> {
+  return await invoke('cancel_download', {
+    downloadId,
+  })
+}
+
 // Tag Operations
 export async function getObjectTags(
   profileId: string,
@@ -331,6 +363,13 @@ export async function startInitialIndex(
   return await invoke('start_initial_index', { profileId, bucketName, maxRequests, batchSize })
 }
 
+export async function cancelIndexing(
+  profileId: string,
+  bucketName: string
+): Promise<void> {
+  return await invoke('cancel_indexing', { profileId, bucketName })
+}
+
 export async function getBucketIndexStats(
   profileId: string,
   bucketName: string
@@ -411,4 +450,99 @@ export async function getIndexFileSize(
   profileId: string
 ): Promise<number> {
   return await invoke('get_index_file_size', { profileId })
+}
+
+// ============================================================================
+// Cache Management
+// ============================================================================
+
+/** Metrics snapshot for a single cache */
+export interface CacheMetricsSnapshot {
+  hits: number
+  misses: number
+  evictions: number
+  insertions: number
+  hit_rate: number
+}
+
+/** Status of a single cache */
+export interface CacheStatus {
+  name: string
+  entries: number
+  max_entries: number
+  idle_timeout_secs: number
+  ttl_secs: number | null
+  metrics: CacheMetricsSnapshot
+}
+
+/** Status of all caches */
+export interface AllCachesStatus {
+  database_managers: CacheStatus
+  index_managers: CacheStatus
+}
+
+/**
+ * Get status of all caches (for monitoring/debug)
+ * Returns metrics (hits, misses, evictions) and configuration
+ */
+export async function getCacheStatus(): Promise<AllCachesStatus> {
+  return await invoke('get_cache_status')
+}
+
+/**
+ * Warmup cache for a profile (preload managers)
+ * Creates DatabaseManager and IndexManager in advance to avoid latency
+ * Ideal to call on profile hover in UI
+ */
+export async function warmupProfileCache(profileId: string): Promise<void> {
+  return await invoke('warmup_profile_cache', { profileId })
+}
+
+/**
+ * Cleanup cache for a specific profile
+ * Call when deleting a profile to free resources immediately
+ */
+export async function cleanupProfileCache(profileId: string): Promise<void> {
+  return await invoke('cleanup_profile_cache', { profileId })
+}
+
+/**
+ * Clear all caches (maintenance)
+ * Frees all cached resources. Managers will be recreated on demand.
+ */
+export async function clearAllCaches(): Promise<void> {
+  return await invoke('clear_all_caches')
+}
+
+// ============================================================================
+// Clipboard Upload Operations
+// ============================================================================
+
+/**
+ * Upload data directly from bytes (for clipboard images/text)
+ * Writes data to a temp file and uses existing upload infrastructure
+ * @returns Upload ID for tracking progress
+ */
+export async function uploadFromBytes(
+  profileId: string,
+  bucket: string,
+  key: string,
+  data: number[] | Uint8Array,
+  contentType: string
+): Promise<string> {
+  return await invoke('upload_from_bytes', {
+    profileId,
+    bucket,
+    key,
+    data: Array.from(data),
+    contentType,
+  })
+}
+
+/**
+ * Read file paths from the system clipboard
+ * Returns a list of file paths if the clipboard contains copied files
+ */
+export async function readClipboardFiles(): Promise<string[]> {
+  return await invoke('read_clipboard_files')
 }

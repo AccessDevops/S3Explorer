@@ -108,6 +108,17 @@ export const useAppStore = defineStore('app', () => {
       isLoading.value = true
       error.value = null
       await tauriService.deleteProfile(profileId)
+
+      // Cleanup backend cache for this profile (DatabaseManager + IndexManager)
+      // This frees SQLite connections and memory immediately instead of waiting for LRU eviction
+      try {
+        await tauriService.cleanupProfileCache(profileId)
+        logger.debug(`[Cache] Cleaned up cache for deleted profile: ${profileId}`)
+      } catch (cacheError) {
+        // Non-critical - cache will eventually be evicted by TTL
+        logger.warn(`[Cache] Failed to cleanup cache for profile ${profileId}`, cacheError)
+      }
+
       if (currentProfile.value?.id === profileId) {
         currentProfile.value = null
         buckets.value = []

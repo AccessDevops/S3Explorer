@@ -4,10 +4,14 @@ import { ref, computed, type Ref, type ComputedRef } from 'vue'
  * Virtual scroll composable for optimizing large lists
  * Renders only visible items + buffer to improve performance
  *
+ * Supports both fixed and variable item heights:
+ * - Fixed: itemHeight: 48
+ * - Variable: getItemHeight: (item) => item.isCompact ? 48 : 100
+ *
  * Usage:
  * const virtualScroll = useVirtualScroll({
  *   items: allItems,
- *   itemHeight: 48,
+ *   itemHeight: 48,  // OR getItemHeight for variable heights
  *   containerHeight: 600,
  *   buffer: 10
  * })
@@ -23,8 +27,11 @@ export interface VirtualScrollOptions<T> {
   /** All items to virtualize */
   items: Ref<T[]> | ComputedRef<T[]>
 
-  /** Height of each item in pixels (must be fixed) */
-  itemHeight: number | Ref<number> | ComputedRef<number>
+  /** Fixed height of each item in pixels */
+  itemHeight?: number | Ref<number> | ComputedRef<number>
+
+  /** Function to get height of each item (for variable heights) */
+  getItemHeight?: (item: T, index: number) => number
 
   /** Height of the visible container in pixels */
   containerHeight: number | Ref<number> | ComputedRef<number>
@@ -66,6 +73,12 @@ export interface VirtualScrollReturn<T> {
 
   /** Current scroll position */
   scrollTop: Ref<number>
+
+  /** Get height for a specific item (useful for inline styles) */
+  getHeightForItem: (item: T, index: number) => number
+
+  /** Whether variable heights are being used */
+  isVariableHeight: boolean
 }
 
 export function useVirtualScroll<T>(
@@ -74,20 +87,25 @@ export function useVirtualScroll<T>(
   const {
     items,
     itemHeight: itemHeightOption,
+    getItemHeight: getItemHeightOption,
     containerHeight: containerHeightOption,
     buffer = 10,
     enabled = ref(true),
   } = options
 
+  // Determine if we're using variable heights
+  const isVariableHeight = !!getItemHeightOption
+
   // Reactive state
   const scrollTop = ref(0)
 
-  // Normalize inputs to refs
-  const itemHeight = computed(() =>
-    typeof itemHeightOption === 'number'
+  // Default fixed height (used when getItemHeight is not provided)
+  const fixedItemHeight = computed(() => {
+    if (itemHeightOption === undefined) return 48 // Default fallback
+    return typeof itemHeightOption === 'number'
       ? itemHeightOption
       : itemHeightOption.value
-  )
+  })
 
   const containerHeight = computed(() =>
     typeof containerHeightOption === 'number'
@@ -101,40 +119,127 @@ export function useVirtualScroll<T>(
       : enabled.value
   )
 
-  // Calculate total height of all items
-  const totalHeight = computed(() => {
-    const allItems = Array.isArray(items.value) ? items.value : items.value
-    return allItems.length * itemHeight.value
+  // Get height for a specific item
+  function getHeightForItem(item: T, index: number): number {
+    if (getItemHeightOption) {
+      return getItemHeightOption(item, index)
+    }
+    return fixedItemHeight.value
+  }
+
+  // Cache for cumulative heights (for variable height mode)
+  // This avoids recalculating from scratch on each scroll
+  const itemPositions = computed(() => {
+    const allItems = items.value
+    if (!isVariableHeight) {
+      // For fixed heights, we don't need to calculate positions
+      return null
+    }
+
+    const positions: { top: number; height: number }[] = []
+    let cumulativeHeight = 0
+
+    for (let i = 0; i < allItems.length; i++) {
+      const height = getHeightForItem(allItems[i], i)
+      positions.push({ top: cumulativeHeight, height })
+      cumulativeHeight += height
+    }
+
+    return positions
   })
 
-  // Calculate how many items fit in the visible area
-  const visibleCount = computed(() =>
-    Math.ceil(containerHeight.value / itemHeight.value)
-  )
+  // Calculate total height of all items
+  const totalHeight = computed(() => {
+    const allItems = items.value
+
+    if (!isVariableHeight) {
+      return allItems.length * fixedItemHeight.value
+    }
+
+    // With variable heights, sum all positions
+    const positions = itemPositions.value
+    if (!positions || positions.length === 0) return 0
+
+    const lastItem = positions[positions.length - 1]
+    return lastItem.top + lastItem.height
+  })
 
   // Calculate start index (with buffer)
   const startIndex = computed(() => {
     if (!isEnabled.value) return 0
+    const allItems = items.value
 
-    const index = Math.floor(scrollTop.value / itemHeight.value)
-    return Math.max(0, index - buffer)
+    if (!isVariableHeight) {
+      // Fixed height: simple calculation
+      const index = Math.floor(scrollTop.value / fixedItemHeight.value)
+      return Math.max(0, index - buffer)
+    }
+
+    // Variable height: binary search for the first visible item
+    const positions = itemPositions.value
+    if (!positions || positions.length === 0) return 0
+
+    const targetScroll = scrollTop.value
+    let low = 0
+    let high = positions.length - 1
+
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2)
+      if (positions[mid].top + positions[mid].height < targetScroll) {
+        low = mid + 1
+      } else {
+        high = mid
+      }
+    }
+
+    return Math.max(0, low - buffer)
+  })
+
+  // Calculate how many items fit in the visible area (approximate for variable heights)
+  const visibleCount = computed(() => {
+    if (!isVariableHeight) {
+      return Math.ceil(containerHeight.value / fixedItemHeight.value)
+    }
+
+    // For variable heights, estimate based on average height
+    const positions = itemPositions.value
+    if (!positions || positions.length === 0) return 10
+
+    const avgHeight = totalHeight.value / positions.length
+    return Math.ceil(containerHeight.value / avgHeight) + buffer
   })
 
   // Calculate end index (with buffer)
   const endIndex = computed(() => {
+    const allItems = items.value
+
     if (!isEnabled.value) {
-      const allItems = Array.isArray(items.value) ? items.value : items.value
       return allItems.length
     }
 
-    const allItems = Array.isArray(items.value) ? items.value : items.value
-    const index = startIndex.value + visibleCount.value + buffer * 2
-    return Math.min(allItems.length, index)
+    if (!isVariableHeight) {
+      const index = startIndex.value + visibleCount.value + buffer * 2
+      return Math.min(allItems.length, index)
+    }
+
+    // For variable heights, find items until we exceed container + buffer
+    const positions = itemPositions.value
+    if (!positions || positions.length === 0) return 0
+
+    const targetBottom = scrollTop.value + containerHeight.value
+    let endIdx = startIndex.value
+
+    while (endIdx < positions.length && positions[endIdx].top < targetBottom) {
+      endIdx++
+    }
+
+    // Add buffer
+    return Math.min(allItems.length, endIdx + buffer)
   })
 
   // Get visible items slice
   const visibleItems = computed(() => {
-    const allItems = Array.isArray(items.value) ? items.value : items.value
+    const allItems = items.value
 
     if (!isEnabled.value) {
       return allItems
@@ -146,7 +251,16 @@ export function useVirtualScroll<T>(
   // Calculate vertical offset for positioning
   const offsetY = computed(() => {
     if (!isEnabled.value) return 0
-    return startIndex.value * itemHeight.value
+
+    if (!isVariableHeight) {
+      return startIndex.value * fixedItemHeight.value
+    }
+
+    // For variable heights, get the position of the start item
+    const positions = itemPositions.value
+    if (!positions || startIndex.value >= positions.length) return 0
+
+    return positions[startIndex.value].top
   })
 
   // Style objects for template
@@ -182,5 +296,7 @@ export function useVirtualScroll<T>(
     contentStyle,
     handleScroll,
     scrollTop,
+    getHeightForItem,
+    isVariableHeight,
   }
 }

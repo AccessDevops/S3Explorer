@@ -1,27 +1,26 @@
 <template>
   <div>
-    <Tooltip :text="t('metrics')" side="top">
-      <Button
-        variant="ghost"
-        class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
-        @click="showMetricsModal = true"
+    <Button
+      variant="ghost"
+      class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
+      @click="showMetricsModal = true"
+      v-tooltip="t('metrics')"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M3 3v18h18" />
-          <path d="m19 9-5 5-4-4-3 3" />
-        </svg>
-      </Button>
-    </Tooltip>
+        <path d="M3 3v18h18" />
+        <path d="m19 9-5 5-4-4-3 3" />
+      </svg>
+    </Button>
 
     <!-- Metrics Dashboard Modal -->
     <Dialog v-model:open="showMetricsModal">
@@ -259,7 +258,7 @@
 
             <!-- Cache Hit Rate Gauge -->
             <div class="border rounded-lg p-4">
-              <h3 class="font-medium mb-4">{{ t('metricsCacheEfficiency') }}</h3>
+              <h3 class="font-medium mb-4">{{ t('metricsIndexEfficiency') }}</h3>
               <div class="flex flex-col items-center justify-center h-32">
                 <!-- Circular gauge -->
                 <div class="relative w-24 h-24">
@@ -469,7 +468,6 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMetrics, initMetricsListener } from '@/composables/useMetrics'
 import { useCacheMetrics } from '@/composables/useCacheMetrics'
-import { metricsStorage } from '@/services/metricsStorage'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useSettingsStore } from '@/stores/settings'
@@ -482,7 +480,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Tooltip } from '@/components/ui/tooltip' // Used for Tooltip component inside modal
 import type { OperationStats, ErrorStats, BucketUsageStats, HourlyStats, S3Provider, CacheSummary } from '@/types/metrics'
 import { OPERATION_CATEGORY_MAP, PROVIDER_INFO } from '@/types/metrics'
 
@@ -593,8 +591,6 @@ watch(
   showMetricsModal,
   async (isOpen) => {
     if (isOpen) {
-      // Ensure metrics storage is initialized before loading
-      await metricsStorage.init().catch(() => {})
       await loadData()
     }
   },

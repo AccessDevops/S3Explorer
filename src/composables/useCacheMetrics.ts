@@ -2,13 +2,45 @@
  * Cache Metrics Composable
  *
  * Provides methods to track cache hit/miss events and query cache statistics.
- * Used to measure the effectiveness of local caching (search index, bucket stats, etc.)
+ * Uses SQLite backend via Tauri for storage.
  */
 
 import { ref, computed } from 'vue'
-import { metricsStorage } from '@/services/metricsStorage'
+import { invoke } from '@tauri-apps/api/tauri'
 import { useSettingsStore } from '@/stores/settings'
-import type { CacheEvent, CacheOperation, CacheSummary, DailyCacheStats } from '@/types/metrics'
+import type { CacheOperation, CacheSummary, DailyCacheStats } from '@/types/metrics'
+import { DEFAULT_S3_PRICING } from '@/types/metrics'
+
+// Backend types
+interface BackendCacheEvent {
+  id: string
+  timestamp: number
+  date: string
+  operation: string
+  hit: boolean
+  profile_id?: string
+  bucket_name?: string
+  saved_requests?: number
+}
+
+interface BackendCacheSummary {
+  hit_rate: number
+  total_hits: number
+  total_misses: number
+  requests_saved: number
+  cost_saved: number
+}
+
+interface BackendDailyCacheStats {
+  date: string
+  total_lookups: number
+  hits: number
+  misses: number
+  hit_rate: number
+  estimated_requests_saved: number
+  estimated_cost_saved: number
+  updated_at: number
+}
 
 // Reactive state
 const todayCacheStats = ref<DailyCacheStats | null>(null)
@@ -29,18 +61,35 @@ function getTodayDate(): string {
 }
 
 /**
+ * Get current pricing from settings store
+ */
+function getCurrentPricing(): { get_per_thousand: number; put_per_thousand: number; list_per_thousand: number } {
+  try {
+    const settingsStore = useSettingsStore()
+    const pricing = settingsStore.getCurrentPricing
+    return {
+      get_per_thousand: pricing.getPerThousand,
+      put_per_thousand: pricing.putPerThousand,
+      list_per_thousand: pricing.listPerThousand,
+    }
+  } catch {
+    return {
+      get_per_thousand: DEFAULT_S3_PRICING.getPerThousand,
+      put_per_thousand: DEFAULT_S3_PRICING.putPerThousand,
+      list_per_thousand: DEFAULT_S3_PRICING.listPerThousand,
+    }
+  }
+}
+
+/**
  * Cache metrics composable
  */
 export function useCacheMetrics() {
-  const settingsStore = useSettingsStore()
-
   /**
    * Initialize cache metrics (call once at app startup)
    */
   async function init(): Promise<void> {
     if (isInitialized.value) return
-
-    await metricsStorage.init()
     await refreshTodayStats()
     isInitialized.value = true
   }
@@ -56,20 +105,20 @@ export function useCacheMetrics() {
       savedRequests?: number // estimated S3 requests saved
     }
   ): Promise<void> {
-    const event: CacheEvent = {
+    const event: BackendCacheEvent = {
       id: generateId(),
       timestamp: Date.now(),
       date: getTodayDate(),
       operation,
       hit: true,
-      profileId: options?.profileId,
-      bucketName: options?.bucketName,
-      savedRequests: options?.savedRequests || 1,
+      profile_id: options?.profileId,
+      bucket_name: options?.bucketName,
+      saved_requests: options?.savedRequests || 1,
     }
 
-    await metricsStorage.recordCacheEvent(event)
+    await invoke('record_cache_event', { event })
 
-    // Update today's stats
+    // Update today's stats locally
     if (todayCacheStats.value) {
       todayCacheStats.value.hits++
       todayCacheStats.value.totalLookups++
@@ -89,19 +138,19 @@ export function useCacheMetrics() {
       bucketName?: string
     }
   ): Promise<void> {
-    const event: CacheEvent = {
+    const event: BackendCacheEvent = {
       id: generateId(),
       timestamp: Date.now(),
       date: getTodayDate(),
       operation,
       hit: false,
-      profileId: options?.profileId,
-      bucketName: options?.bucketName,
+      profile_id: options?.profileId,
+      bucket_name: options?.bucketName,
     }
 
-    await metricsStorage.recordCacheEvent(event)
+    await invoke('record_cache_event', { event })
 
-    // Update today's stats
+    // Update today's stats locally
     if (todayCacheStats.value) {
       todayCacheStats.value.misses++
       todayCacheStats.value.totalLookups++
@@ -114,16 +163,59 @@ export function useCacheMetrics() {
    * Refresh today's cache statistics
    */
   async function refreshTodayStats(): Promise<void> {
-    const pricing = settingsStore.getCurrentPricing
-    todayCacheStats.value = await metricsStorage.getTodayCacheStats(pricing)
+    try {
+      const pricing = getCurrentPricing()
+      const stats = await invoke<BackendDailyCacheStats>('get_today_cache_stats', {
+        getPerThousand: pricing.get_per_thousand,
+        putPerThousand: pricing.put_per_thousand,
+        listPerThousand: pricing.list_per_thousand,
+      })
+
+      todayCacheStats.value = {
+        date: stats.date,
+        totalLookups: stats.total_lookups,
+        hits: stats.hits,
+        misses: stats.misses,
+        hitRate: stats.hit_rate,
+        estimatedRequestsSaved: stats.estimated_requests_saved,
+        estimatedCostSaved: stats.estimated_cost_saved,
+        updatedAt: stats.updated_at,
+      }
+    } catch (error) {
+      console.warn('Failed to refresh today cache stats:', error)
+    }
   }
 
   /**
    * Get cache summary for a period
    */
   async function getCacheSummary(days: number): Promise<CacheSummary> {
-    const pricing = settingsStore.getCurrentPricing
-    return metricsStorage.getCacheSummary(days, pricing)
+    try {
+      const pricing = getCurrentPricing()
+      const summary = await invoke<BackendCacheSummary>('get_cache_summary', {
+        days,
+        getPerThousand: pricing.get_per_thousand,
+        putPerThousand: pricing.put_per_thousand,
+        listPerThousand: pricing.list_per_thousand,
+      })
+
+      return {
+        hitRate: summary.hit_rate,
+        totalHits: summary.total_hits,
+        totalMisses: summary.total_misses,
+        requestsSaved: summary.requests_saved,
+        costSaved: summary.cost_saved,
+      }
+    } catch (error) {
+      console.warn('Failed to get cache summary:', error)
+      return {
+        hitRate: 0,
+        totalHits: 0,
+        totalMisses: 0,
+        requestsSaved: 0,
+        costSaved: 0,
+      }
+    }
   }
 
   /**

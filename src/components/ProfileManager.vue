@@ -49,6 +49,7 @@
             : 'bg-white/5 hover:bg-white/10'
         "
         @click="selectProfile(profile)"
+        @mouseenter="handleProfileHover(profile)"
       >
         <div class="flex-1">
           <div class="font-medium">{{ profile.name }}</div>
@@ -266,7 +267,8 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
-import { testConnection } from '../services/tauri'
+import { testConnection, warmupProfileCache } from '../services/tauri'
+import { logger } from '../utils/logger'
 import type { Profile, TestConnectionResponse } from '../types'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
@@ -481,5 +483,33 @@ async function deleteProfileConfirm(profile: Profile) {
 function enablePathStyle() {
   formData.path_style = true
   testResult.value = null
+}
+
+// Cache warmup on profile hover - debounced to avoid spam
+let warmupTimeout: ReturnType<typeof setTimeout> | null = null
+const warmedUpProfiles = new Set<string>()
+
+function handleProfileHover(profile: Profile) {
+  // Skip if already current profile or already warmed up in this session
+  if (appStore.currentProfile?.id === profile.id || warmedUpProfiles.has(profile.id)) {
+    return
+  }
+
+  // Clear previous timeout
+  if (warmupTimeout) {
+    clearTimeout(warmupTimeout)
+  }
+
+  // Debounce: only warmup if user hovers for 150ms
+  warmupTimeout = setTimeout(async () => {
+    try {
+      await warmupProfileCache(profile.id)
+      warmedUpProfiles.add(profile.id)
+      logger.debug(`[CacheWarmup] Preloaded cache for profile: ${profile.name}`)
+    } catch (e) {
+      // Non-critical - silent fail
+      logger.warn(`[CacheWarmup] Failed to warmup profile ${profile.name}`, e)
+    }
+  }, 150)
 }
 </script>

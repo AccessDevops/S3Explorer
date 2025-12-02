@@ -24,12 +24,39 @@
       </div>
 
       <div v-for="(progress, key) in activeProgress" :key="key" class="mb-2 last:mb-0">
-        <div class="text-xs text-muted-foreground mb-1 truncate" :title="progress.bucket_name">
-          {{ progress.bucket_name }}
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs text-muted-foreground truncate flex-1" :title="progress.bucket_name">
+            {{ progress.bucket_name }}
+          </div>
+          <!-- Stop button -->
+          <button
+            @click="handleCancel(progress.profile_id, progress.bucket_name)"
+            class="ml-2 p-1 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+            :title="t('cancelIndex')"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+            >
+              <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+            </svg>
+          </button>
         </div>
         <div class="flex items-center gap-2">
           <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+            <!-- Indeterminate progress bar when max_requests = 0 (full indexing) -->
             <div
+              v-if="progress.max_requests === 0"
+              class="h-full bg-blue-500 animate-indeterminate"
+              style="width: 30%"
+            />
+            <!-- Determinate progress bar -->
+            <div
+              v-else
               class="h-full bg-blue-500 transition-all duration-300"
               :style="{ width: `${getProgressPercent(progress)}%` }"
             />
@@ -39,7 +66,13 @@
           </span>
         </div>
         <div class="text-xs text-muted-foreground/60 mt-0.5">
-          {{ progress.requests_made }}/{{ progress.max_requests }} {{ t('requests') }}
+          <!-- Show different text for full indexing vs limited -->
+          <span v-if="progress.max_requests === 0">
+            {{ progress.requests_made }} {{ t('requests') }}
+          </span>
+          <span v-else>
+            {{ progress.requests_made }}/{{ progress.max_requests }} {{ t('requests') }}
+          </span>
         </div>
       </div>
     </div>
@@ -52,7 +85,7 @@ import { getIndexManager } from '../composables/useIndexManager'
 import { useI18n } from '../composables/useI18n'
 import type { IndexProgressEvent } from '../types'
 
-const { indexProgress, indexingBuckets } = getIndexManager()
+const { indexProgress, indexingBuckets, cancelIndexing } = getIndexManager()
 const { t } = useI18n()
 
 const hasActiveIndexing = computed(() =>
@@ -73,6 +106,10 @@ function getProgressPercent(progress: IndexProgressEvent): number {
 function formatNumber(num: number): string {
   return num.toLocaleString()
 }
+
+async function handleCancel(profileId: string, bucketName: string) {
+  await cancelIndexing(profileId, bucketName)
+}
 </script>
 
 <style scoped>
@@ -85,5 +122,22 @@ function formatNumber(num: number): string {
 .slide-up-leave-to {
   opacity: 0;
   transform: translateY(20px);
+}
+
+/* Indeterminate progress bar animation */
+.animate-indeterminate {
+  animation: indeterminate 1.5s infinite ease-in-out;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(200%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
 }
 </style>

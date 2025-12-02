@@ -5,10 +5,10 @@
       @click="toggleMenu"
       :class="[
         'p-1.5 rounded-md transition-all',
-        iconColorClass,
+        settingsStore.forceS3Search ? 'text-orange-500 dark:text-orange-400 ring-2 ring-orange-500 dark:ring-orange-400' : iconColorClass,
         isIndexing ? 'animate-pulse' : 'hover:bg-muted',
       ]"
-      v-tooltip="t('searchIndex')"
+      v-tooltip="settingsStore.forceS3Search ? t('forceS3Search') : t('searchIndex')"
     >
       <!-- Database/Index icon -->
       <svg
@@ -59,8 +59,8 @@
               <span>{{ indexStats.total_objects.toLocaleString() }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-muted-foreground">{{ t('size') }}:</span>
-              <span>{{ formatBytes(indexStats.total_size) }}</span>
+              <span class="text-muted-foreground">{{ t('indexSize') }}:</span>
+              <span>{{ formatBytes(indexStats.estimated_index_size) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">{{ t('status') }}:</span>
@@ -98,8 +98,50 @@
           </div>
         </div>
 
+        <!-- Force S3 Search Toggle -->
+        <div class="pt-3 border-t">
+          <button
+            @click="settingsStore.forceS3Search = !settingsStore.forceS3Search"
+            class="w-full text-left px-3 py-2 text-sm rounded-md flex items-center justify-between gap-2 transition-colors"
+            :class="settingsStore.forceS3Search
+              ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
+              : 'hover:bg-muted'"
+          >
+            <div class="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <span>{{ t('forceS3Search') }}</span>
+            </div>
+            <div
+              class="w-9 h-5 rounded-full transition-colors relative"
+              :class="settingsStore.forceS3Search ? 'bg-orange-500' : 'bg-muted-foreground/30'"
+            >
+              <div
+                class="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                :class="settingsStore.forceS3Search ? 'translate-x-4' : 'translate-x-0.5'"
+              ></div>
+            </div>
+          </button>
+          <p class="text-xs text-muted-foreground mt-1 px-3">
+            {{ t('forceS3SearchDescription') }}
+          </p>
+        </div>
+
         <!-- Action buttons -->
         <div class="space-y-2 pt-3 border-t">
+          <!-- Rebuild Index button (limited) -->
           <Button
             v-if="!isIndexing"
             @click="handleRebuildIndex"
@@ -125,6 +167,35 @@
               <path d="M16 16h5v5" />
             </svg>
             {{ indexStats ? t('rebuildIndex') : t('buildIndex') }}
+          </Button>
+
+          <!-- Build Full Index button (only shown when index is partial) -->
+          <Button
+            v-if="indexStats && !indexStats.is_complete && !isIndexing"
+            @click="showFullIndexWarning = true"
+            variant="default"
+            size="sm"
+            class="w-full"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="mr-2"
+            >
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+              <path d="M3 12A9 3 0 0 0 21 12" />
+              <path d="M12 12v6" />
+              <path d="M9 15l3 3 3-3" />
+            </svg>
+            {{ t('buildFullIndex') }}
           </Button>
 
           <Button
@@ -153,6 +224,54 @@
             {{ t('deleteIndex') }}
           </Button>
         </div>
+
+        <!-- Full Index Warning Dialog -->
+        <div v-if="showFullIndexWarning" class="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+          <div class="flex items-start gap-2 mb-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="text-yellow-500 mt-0.5 flex-shrink-0"
+            >
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+            </svg>
+            <div class="text-sm">
+              <p class="font-medium text-yellow-600 dark:text-yellow-400 mb-1">{{ t('buildFullIndexWarningTitle') }}</p>
+              <p class="text-muted-foreground text-xs">{{ t('buildFullIndexWarning') }}</p>
+              <p class="text-muted-foreground text-xs mt-1">
+                {{ t('currentlyIndexed') }}: <span class="font-medium">{{ indexStats?.total_objects.toLocaleString() }}</span> {{ t('objects').toLowerCase() }}
+              </p>
+              <p class="text-muted-foreground text-xs mt-1">{{ t('canCancelAnytime') }}</p>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              class="flex-1"
+              @click="showFullIndexWarning = false"
+            >
+              {{ t('cancel') }}
+            </Button>
+            <Button
+              size="sm"
+              variant="default"
+              class="flex-1"
+              @click="handleBuildFullIndex"
+            >
+              {{ t('startFullIndex') }}
+            </Button>
+          </div>
+        </div>
       </div>
       </div>
     </Teleport>
@@ -163,6 +282,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { getIndexManager } from '../composables/useIndexManager'
 import { useI18n } from '../composables/useI18n'
+import { useSettingsStore } from '../stores/settings'
 import { Button } from './ui/button'
 import { logger } from '../utils/logger'
 import type { BucketIndexStats } from '../types'
@@ -178,10 +298,12 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const settingsStore = useSettingsStore()
 const indexManager = getIndexManager()
 
 const buttonRef = ref<HTMLButtonElement | null>(null)
 const showMenu = ref(false)
+const showFullIndexWarning = ref(false)
 const menuPosition = ref({ top: 0, left: 0 })
 const indexStats = ref<BucketIndexStats | null>(null)
 
@@ -268,23 +390,45 @@ async function loadIndexStats() {
   indexStats.value = stats
 }
 
-// Handle rebuild index
+// Handle rebuild index (limited by settings)
 async function handleRebuildIndex() {
   if (!props.profileId || !props.bucketName) return
 
   showMenu.value = false
+  showFullIndexWarning.value = false
 
   try {
     // Clear existing index first if it exists
     if (indexStats.value) {
       await indexManager.clearIndex(props.profileId, props.bucketName)
     }
-    // Start new indexing
+    // Start new indexing (limited by settings)
     await indexManager.startIndexing(props.profileId, props.bucketName)
     await loadIndexStats()
     emit('indexChanged')
   } catch (error) {
     logger.error('Error rebuilding index', error)
+  }
+}
+
+// Handle build full index (no limit)
+async function handleBuildFullIndex() {
+  if (!props.profileId || !props.bucketName) return
+
+  showMenu.value = false
+  showFullIndexWarning.value = false
+
+  try {
+    // Clear existing index first if it exists
+    if (indexStats.value) {
+      await indexManager.clearIndex(props.profileId, props.bucketName)
+    }
+    // Start full indexing (no request limit)
+    await indexManager.startFullIndexing(props.profileId, props.bucketName)
+    await loadIndexStats()
+    emit('indexChanged')
+  } catch (error) {
+    logger.error('Error building full index', error)
   }
 }
 

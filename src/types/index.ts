@@ -105,6 +105,18 @@ export interface UploadProgressEvent {
   error?: string
 }
 
+// Download Progress Event (from Rust)
+export interface DownloadProgressEvent {
+  download_id: string
+  file_name: string
+  file_size: number
+  downloaded_bytes: number
+  percentage: number
+  status: 'pending' | 'starting' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+  bytes_per_second?: number
+}
+
 // Object Tag
 export interface ObjectTag {
   key: string
@@ -149,6 +161,8 @@ export interface BucketIndexStats {
   is_complete: boolean
   storage_class_breakdown: StorageClassStats[]
   last_indexed_at: number | null
+  /** Estimated size of the index data for this bucket (in bytes) */
+  estimated_index_size: number
 }
 
 // Prefix (folder) statistics
@@ -186,7 +200,7 @@ export interface InitialIndexResult {
 }
 
 // Index status enum
-export type IndexStatus = 'starting' | 'indexing' | 'completed' | 'partial' | 'failed'
+export type IndexStatus = 'starting' | 'indexing' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
 // Index progress event (from Rust via Tauri events)
 export interface IndexProgressEvent {
@@ -208,4 +222,74 @@ export interface BucketIndexMetadata {
   is_complete: boolean
   last_indexed_at: number | null
   estimated_index_size: number // Estimated size of the index data for this bucket
+}
+
+// ============================================================================
+// Bucket Configuration Types (Read-Only)
+// ============================================================================
+
+export interface BucketPolicyResponse {
+  policy: string | null
+  error: string | null
+}
+
+export interface CorsRule {
+  allowed_headers: string[]
+  allowed_methods: string[]
+  allowed_origins: string[]
+  expose_headers: string[]
+  max_age_seconds: number | null
+}
+
+export interface BucketCorsResponse {
+  rules: CorsRule[]
+  error: string | null
+}
+
+export interface LifecycleTransition {
+  days: number | null
+  date: string | null
+  storage_class: string
+}
+
+export interface LifecycleRule {
+  id: string | null
+  status: string
+  filter_prefix: string | null
+  expiration_days: number | null
+  expiration_date: string | null
+  transitions: LifecycleTransition[]
+  noncurrent_version_expiration_days: number | null
+  abort_incomplete_multipart_days: number | null
+}
+
+export interface BucketLifecycleResponse {
+  rules: LifecycleRule[]
+  error: string | null
+}
+
+export interface BucketVersioningResponse {
+  status: string | null // "Enabled" | "Suspended" | null
+  mfa_delete: string | null
+  error: string | null
+}
+
+export interface BucketEncryptionRule {
+  sse_algorithm: string
+  kms_master_key_id: string | null
+  bucket_key_enabled: boolean | null
+}
+
+export interface BucketEncryptionResponse {
+  rules: BucketEncryptionRule[]
+  error: string | null
+}
+
+export interface BucketConfigurationResponse {
+  policy: BucketPolicyResponse
+  acl: string
+  cors: BucketCorsResponse
+  lifecycle: BucketLifecycleResponse
+  versioning: BucketVersioningResponse
+  encryption: BucketEncryptionResponse
 }

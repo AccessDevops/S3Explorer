@@ -112,6 +112,22 @@
             <!-- LIVE SEARCH MODE -->
             <div v-else class="flex items-center gap-3">
               <div class="flex items-center gap-2">
+                <!-- Search indicator -->
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-muted-foreground"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
                 <span v-if="isSearching" class="text-muted-foreground">{{ t('searching') }}...</span>
                 <span v-else class="text-green-600 dark:text-green-400 font-medium">✓ {{ t('searchComplete') }}</span>
                 <span class="font-medium text-primary">{{ searchProgress }} {{ t('found') }}</span>
@@ -780,10 +796,10 @@
           <DialogTitle class="flex items-center gap-2 flex-shrink-0">
             <span>{{ viewingObject ? getFileName(viewingObject.key) : '' }}</span>
             <span
-              v-if="objectViewerRef?.contentType"
+              v-if="viewerContentType"
               class="text-xs font-normal text-muted-foreground px-2 py-1 bg-muted rounded"
             >
-              {{ objectViewerRef.contentType }}
+              {{ viewerContentType }}
             </span>
           </DialogTitle>
         </DialogHeader>
@@ -854,12 +870,12 @@
                   </div>
 
                   <div
-                    v-if="objectViewerRef?.contentType"
+                    v-if="viewerContentType"
                     class="font-medium text-muted-foreground"
                   >
                     {{ t('contentType') }}:
                   </div>
-                  <div v-if="objectViewerRef?.contentType">{{ objectViewerRef.contentType }}</div>
+                  <div v-if="viewerContentType">{{ viewerContentType }}</div>
                 </div>
               </div>
             </div>
@@ -1529,7 +1545,7 @@
                   <p>
                     {{ t('currentObjects') }}:
                     <span class="font-medium">
-                      {{ indexUpdateCurrentCount === -1 ? `> ${settingsStore.indexAutoBuildThreshold}` : indexUpdateCurrentCount.toLocaleString() }}
+                      {{ indexUpdateCurrentCount === -1 ? '-' : indexUpdateCurrentCount.toLocaleString() }}
                     </span>
                   </p>
                   <p v-if="indexUpdateObjectDiff !== 0" :class="indexUpdateObjectDiff > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
@@ -1571,8 +1587,21 @@
       </Card>
     </Transition>
 
-    <!-- Upload progress popup -->
-    <RustUploadProgress />
+    <!-- Download progress popup -->
+    <DownloadProgress />
+
+    <!-- Clipboard paste upload confirmation dialog -->
+    <ClipboardUploadConfirm
+      :show="clipboardUpload.showConfirmDialog.value"
+      :items="clipboardUpload.pendingItems.value"
+      :current-bucket="appStore.currentBucket || ''"
+      :current-prefix="appStore.currentPrefix"
+      :is-uploading="clipboardUpload.isUploading.value"
+      @confirm="clipboardUpload.confirmUpload"
+      @cancel="clipboardUpload.cancelUpload"
+      @update-name="clipboardUpload.updateItemName"
+      @remove-item="clipboardUpload.removeItem"
+    />
 
     <!-- Fullscreen Image Editor - Rendered outside dialog to avoid focus trap -->
     <div
@@ -1643,6 +1672,9 @@ import { formatSize, formatDate, formatTime } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { validateObjectKey } from '../utils/validators'
 import { useRustUploadManager } from '../composables/useRustUploadManager'
+import { useRustDownloadManager } from '../composables/useRustDownloadManager'
+import { useOptimisticBatch } from '../composables/useOptimisticBatch'
+import { useClipboardUpload } from '../composables/useClipboardUpload'
 import {
   createFolder as createFolderService,
   deleteObject,
@@ -1660,7 +1692,6 @@ import {
   isPrefixKnown,
 } from '../services/tauri'
 import { save, open } from '@tauri-apps/api/dialog'
-import { writeBinaryFile } from '@tauri-apps/api/fs'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse } from '../types'
@@ -1668,7 +1699,8 @@ import ObjectViewer from './ObjectViewer.vue'
 import ImageEditor from './ImageEditor.vue'
 import ContextMenu from './ContextMenu.vue'
 import IndexButton from './IndexButton.vue'
-import RustUploadProgress from './RustUploadProgress.vue'
+import DownloadProgress from './DownloadProgress.vue'
+import ClipboardUploadConfirm from './ClipboardUploadConfirm.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -1773,6 +1805,9 @@ const { t } = useI18n()
 const dialog = useDialog()
 const toast = useToast()
 const rustUploadManager = useRustUploadManager()
+const rustDownloadManager = useRustDownloadManager()
+const optimisticBatch = useOptimisticBatch()
+const clipboardUpload = useClipboardUpload()
 const indexManager = getIndexManager()
 const bucketStatsComposable = useBucketStats()
 
@@ -2134,12 +2169,16 @@ const headersCount = computed(() => {
   count += Object.keys(viewModalHeaders.value.metadata || {}).length
   return count
 })
+// Shared computed for ObjectViewer's contentType to ensure consistency
+// between count and display (avoids potential reactivity issues with template refs)
+const viewerContentType = computed(() => objectViewerRef.value?.contentType ?? null)
+
 const metadataCount = computed(() => {
   if (!viewingObject.value) return 0
   let count = 3 // key, size, lastModified always present
   if (viewingObject.value.storage_class) count++
   if (viewingObject.value.e_tag) count++
-  if (objectViewerRef.value?.contentType) count++
+  if (viewerContentType.value) count++
   return count
 })
 const permissionsCount = computed(() => 0) // No permissions implemented yet
@@ -2356,6 +2395,8 @@ const selectedTotalSize = computed(() => {
 })
 
 // Watch for folder changes and calculate sizes
+// Note: deep: true is required because the store mutates the folders array with push()
+// instead of replacing it when loading more objects
 watch(
   () => appStore.folders,
   async (folders) => {
@@ -2396,7 +2437,7 @@ watch(
       }
     }
   },
-  { immediate: true }
+  { immediate: true, deep: true }
 )
 
 // Watch for index completion to recalculate folder sizes
@@ -2622,6 +2663,7 @@ watch(searchQuery, async (query) => {
 
       // ═══════════════════════════════════════════════════════════
       // TRY INDEX FIRST (ultra-fast SQLite search)
+      // Skip if Force S3 Search is enabled
       // ═══════════════════════════════════════════════════════════
 
       const hasIndex = await indexManager.isIndexed(profileId, bucket)
@@ -2629,7 +2671,8 @@ watch(searchQuery, async (query) => {
       // Check version again after async operation
       if (currentSearchVersion !== searchVersion.value) return
 
-      if (hasIndex) {
+      // Use index only if available AND Force S3 Search is not enabled
+      if (hasIndex && !settingsStore.forceS3Search) {
         logger.debug('Using SQLite index for instant results')
         useIndexForSearch.value = true
 
@@ -2659,12 +2702,11 @@ watch(searchQuery, async (query) => {
       // FALLBACK: LIVE SEARCH (with improved feedback)
       // ═══════════════════════════════════════════════════════════
 
-      logger.debug('Using live search (no index)')
+      logger.debug(settingsStore.forceS3Search ? 'Using live search (Force S3 enabled)' : 'Using live search (no index)')
       useIndexForSearch.value = false
       searchAbortController.value = new AbortController()
 
       let continuationToken: string | undefined = undefined
-      const MAX_SEARCH_RESULTS = 10000 // Limit to prevent memory overflow
       const queryLower = query.toLowerCase()
 
       // If no index exists and it's global search, suggest building one
@@ -2677,12 +2719,6 @@ watch(searchQuery, async (query) => {
       do {
         // Check if search was aborted or version changed
         if (searchAbortController.value.signal.aborted || currentSearchVersion !== searchVersion.value) {
-          break
-        }
-
-        // Check if we've reached the maximum limit
-        if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
-          toast.warning(t('searchLimitReached', MAX_SEARCH_RESULTS))
           break
         }
 
@@ -2710,9 +2746,7 @@ watch(searchQuery, async (query) => {
         )
 
         // Append only matches (not all objects!)
-        const remainingSlots = MAX_SEARCH_RESULTS - globalSearchResults.value.length
-        const matchesToAdd = pageMatches.slice(0, remainingSlots)
-        globalSearchResults.value.push(...matchesToAdd)
+        globalSearchResults.value.push(...pageMatches)
 
         // ✨ IMPROVEMENT: Update progress with matches count (not total objects)
         searchProgress.value = globalSearchResults.value.length
@@ -2733,11 +2767,6 @@ watch(searchQuery, async (query) => {
           } else {
             searchTimeRemaining.value = 0
           }
-        }
-
-        // Stop if we've reached the limit
-        if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
-          break
         }
 
         // Check if there are more pages
@@ -2780,6 +2809,20 @@ watch(
     globalSearchResults.value = []
     searchQuery.value = ''
     isSearching.value = false
+    // Cancel pending optimistic batch (will be reloaded via loadObjects)
+    optimisticBatch.cancelBatch()
+  }
+)
+
+// Force flush optimistic batch when all uploads complete
+watch(
+  () => rustUploadManager.hasActiveUploads.value,
+  (hasActive, wasActive) => {
+    // Transition from "active" to "inactive" = all uploads completed
+    if (wasActive && !hasActive) {
+      logger.debug('[Upload] All uploads completed, flushing optimistic batch')
+      optimisticBatch.forceFlush()
+    }
   }
 )
 
@@ -2818,6 +2861,19 @@ watch(
           hasSearchIndex.value = true
           currentIndexSize.value = stats.total_objects
           logger.debug(`[Index] Bucket ${newBucket}: indexed with ${stats.total_objects} objects, complete=${stats.is_complete}`)
+
+          // Check if index is still valid (not expired)
+          const isValid = await indexManager.isIndexValid(profileId, newBucket)
+          if (!isValid) {
+            // Index is expired - show update prompt
+            indexUpdateIndexCount.value = stats.total_objects
+            // Try to get current object count from S3 (if available from bucket stats)
+            // For now, set to -1 to indicate unknown
+            indexUpdateCurrentCount.value = -1
+            indexUpdateObjectDiff.value = 0
+            showIndexUpdatePrompt.value = true
+            logger.debug(`[Index] Bucket ${newBucket}: index expired, showing update prompt`)
+          }
         }
       } else {
         hasSearchIndex.value = false
@@ -3308,18 +3364,25 @@ function getFileIcon(key: string): { icon: any; colorClass: string } {
 }
 
 async function uploadFilesHandler() {
-  if (!appStore.currentProfile || !appStore.currentBucket) return
+  console.log('[Upload] uploadFilesHandler called')
+  if (!appStore.currentProfile || !appStore.currentBucket) {
+    console.log('[Upload] No profile or bucket, returning early')
+    return
+  }
 
   // Capture values to prevent null reference errors during async operations
   const profileId = appStore.currentProfile.id
   const bucket = appStore.currentBucket
   const prefix = appStore.currentPrefix
 
+  console.log('[Upload] Opening file dialog...')
   // Use Tauri dialog to select files
-  const selected = await open({
-    multiple: true,
-    title: t('upload'),
-  })
+  try {
+    const selected = await open({
+      multiple: true,
+      title: t('upload'),
+    })
+    console.log('[Upload] Dialog result:', selected)
 
   if (!selected) return // User cancelled
 
@@ -3375,6 +3438,10 @@ async function uploadFilesHandler() {
   toast.success(`Queued ${filePaths.length} file(s) for upload`)
 
   // Objects will be reloaded automatically when uploads complete
+  } catch (err) {
+    console.error('[Upload] Error opening dialog:', err)
+    toast.error('Failed to open file dialog')
+  }
 }
 
 async function createFolderHandler() {
@@ -3467,11 +3534,14 @@ async function downloadObject(key: string) {
 
     if (!filePath) return
 
-    const { getObject } = await import('../services/tauri')
-    const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-
-    await writeBinaryFile(filePath, new Uint8Array(response.content))
-    toast.success(t('fileDownloadedSuccess'))
+    // Use streaming download - no memory buffering, progress via events
+    await rustDownloadManager.startDownload(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      key,
+      filePath
+    )
+    // Success toast will be shown via download progress component
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -3573,22 +3643,20 @@ function handleFileDragStart(event: DragEvent, obj: S3Object) {
   }
 }
 
-async function handleFileDragEnd(event: DragEvent, obj: S3Object) {
+function handleFileDragEnd(_event: DragEvent, _obj: S3Object) {
   isDraggingFile.value = false
   draggingObject.value = null
 
-  // Check if the file was dropped outside the app window (to filesystem)
-  if (event.dataTransfer && event.dataTransfer.dropEffect !== 'none') {
-    // User dropped the file somewhere, trigger download
-    await downloadObjectDragDrop(obj.key)
-  }
+  // NOTE: Previously attempted to detect drops outside the app window using
+  // dropEffect !== 'none', but this is unreliable - it triggers even for
+  // drops inside the app. Drag-to-download disabled to prevent unexpected behavior.
+  // Users can download via double-click, download button, or context menu.
 }
 
 async function downloadObjectDragDrop(key: string) {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   const fileName = getFileName(key)
-  const toastId = toast.loading(`${t('downloading')} ${fileName}`)
 
   try {
     // Ask user where to save
@@ -3596,19 +3664,17 @@ async function downloadObjectDragDrop(key: string) {
       defaultPath: fileName,
     })
 
-    if (!filePath) {
-      toast.removeToast(toastId)
-      return
-    }
+    if (!filePath) return
 
-    // Download the file
-    const { getObject } = await import('../services/tauri')
-    const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-
-    await writeBinaryFile(filePath, new Uint8Array(response.content))
-    toast.completeToast(toastId, `${fileName} ${t('fileDownloadedSuccess')}`, 'success')
+    // Use streaming download - progress shown in download progress component
+    await rustDownloadManager.startDownload(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      key,
+      filePath
+    )
   } catch (e) {
-    toast.completeToast(toastId, `${t('downloadFailed')}: ${e}`, 'error')
+    toast.error(`${t('downloadFailed')}: ${e}`)
   }
 }
 
@@ -3624,15 +3690,11 @@ function handleFolderDragStart(event: DragEvent, folder: string) {
   }
 }
 
-async function handleFolderDragEnd(event: DragEvent, folder: string) {
+function handleFolderDragEnd(_event: DragEvent, _folder: string) {
   isDraggingFile.value = false
   draggingFolder.value = null
 
-  // Check if the folder was dropped outside the app window
-  if (event.dataTransfer && event.dataTransfer.dropEffect !== 'none') {
-    // User dropped the folder, trigger download of all contents
-    await downloadFolderDragDrop(folder)
-  }
+  // NOTE: Drag-to-download disabled - see handleFileDragEnd comment.
 }
 
 async function downloadFolderDragDrop(folder: string) {
@@ -3652,7 +3714,6 @@ async function downloadFolderDragDrop(folder: string) {
 
   try {
     // Get all objects in the folder
-    const { listObjects, getObject } = await import('../services/tauri')
     const allObjects: S3Object[] = []
     let continuationToken: string | undefined = undefined
 
@@ -3694,48 +3755,40 @@ async function downloadFolderDragDrop(folder: string) {
       return
     }
 
-    // Download all files
-    let successCount = 0
-    let failCount = 0
+    // Get base directory
+    const baseDir = folderPath.substring(0, folderPath.lastIndexOf('/'))
 
+    // Start streaming downloads for all files
+    // Each file gets its own progress tracking via download manager
+    toast.updateToast(toastId, {
+      message: `${t('downloading')} ${allObjects.length} files...`,
+    })
+
+    let startedCount = 0
     for (const obj of allObjects) {
       try {
         const fileName = getFileName(obj.key)
-        const response = await getObject(
-          appStore.currentProfile.id,
-          appStore.currentBucket,
-          obj.key
-        )
-
-        // Construct file path (base directory + filename)
-        const baseDir = folderPath.substring(0, folderPath.lastIndexOf('/'))
         const filePath = `${baseDir}/${fileName}`
 
-        await writeBinaryFile(filePath, new Uint8Array(response.content))
-        successCount++
-
-        // Update progress
-        const progress = Math.round(((successCount + failCount) / allObjects.length) * 100)
-        toast.updateToast(toastId, {
-          message: `${t('downloading')} ${successCount}/${allObjects.length} files`,
-          progress,
-        })
+        // Start streaming download (non-blocking, progress via events)
+        await rustDownloadManager.startDownload(
+          appStore.currentProfile.id,
+          appStore.currentBucket,
+          obj.key,
+          filePath
+        )
+        startedCount++
       } catch (e) {
-        logger.error(`Failed to download ${obj.key}:`, e)
-        failCount++
+        logger.error(`Failed to start download for ${obj.key}:`, e)
       }
     }
 
-    // Complete
-    if (failCount === 0) {
-      toast.completeToast(toastId, `Downloaded ${successCount} file(s) successfully!`, 'success')
-    } else {
-      toast.completeToast(
-        toastId,
-        `Downloaded ${successCount} file(s), ${failCount} failed`,
-        failCount < allObjects.length ? 'success' : 'error'
-      )
-    }
+    // Complete toast - individual progress shown in download progress component
+    toast.completeToast(
+      toastId,
+      `Started ${startedCount} download(s). Check progress panel.`,
+      'success'
+    )
   } catch (e) {
     logger.error('Folder download failed:', e)
   }
@@ -4122,6 +4175,11 @@ async function deleteFolderConfirm(folder: string) {
 
 // Handle file drop using Tauri's event system (NEW: Rust-managed uploads)
 async function handleFileDrop(paths: string[]) {
+  // Ignore empty drops (e.g., when dragging S3 objects within the app)
+  if (!paths || paths.length === 0) {
+    return
+  }
+
   if (!appStore.currentProfile || !appStore.currentBucket) {
     logger.error('No profile or bucket selected')
     return
@@ -4460,18 +4518,14 @@ async function downloadObjectVersion(version: ObjectVersion) {
 
     if (!filePath) return
 
-    // Note: You may need to update the backend to support downloading specific versions
-    // For now, this downloads the object with the version ID
-    // The backend's getObject function would need to accept an optional versionId parameter
-    const { getObject } = await import('../services/tauri')
-    const response = await getObject(
+    // Note: Currently downloads the latest version
+    // TODO: Backend needs to support versionId parameter for specific versions
+    await rustDownloadManager.startDownload(
       appStore.currentProfile.id,
       appStore.currentBucket,
-      version.key
+      version.key,
+      filePath
     )
-
-    await writeBinaryFile(filePath, new Uint8Array(response.content))
-    toast.success(t('fileDownloadedSuccess'))
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -4565,7 +4619,9 @@ async function createFileHandler() {
 
 /**
  * Handle upload completion optimistically
- * Adds uploaded files to local store without reloading from S3
+ * Uses adaptive batching to reduce reactivity overhead with many uploads
+ * - ≤10 uploads: immediate add (best UX)
+ * - >10 uploads: batched with delay (better performance)
  */
 function handleUploadCompleted(event: Event) {
   const customEvent = event as CustomEvent<{
@@ -4577,20 +4633,15 @@ function handleUploadCompleted(event: Event) {
 
   const { bucket, key, size, contentType: _contentType } = customEvent.detail
 
-  logger.debug('[Upload] Object uploaded, adding optimistically:', key)
+  logger.debug('[Upload] Object uploaded, adding via batch system:', key)
 
-  // Only add if it's in the current bucket and current prefix
-  if (bucket !== appStore.currentBucket) {
-    logger.debug('[Upload] Skipping - different bucket')
-    return
-  }
-
+  // Only add if it's in the current prefix
   if (!key.startsWith(appStore.currentPrefix)) {
     logger.debug('[Upload] Skipping - different prefix')
     return
   }
 
-  // Add object optimistically
+  // Create S3Object for batch
   const newObj: S3Object = {
     key,
     size,
@@ -4600,8 +4651,8 @@ function handleUploadCompleted(event: Event) {
     is_folder: false,
   }
 
-  appStore.addObject(newObj)
-  logger.debug('[Upload] Object added optimistically:', key)
+  // Use adaptive batch system (handles bucket check internally)
+  optimisticBatch.addObjectToBatch(bucket, newObj)
 }
 
 // Copy/Paste functions
@@ -4998,61 +5049,30 @@ async function downloadSelectedItems() {
         ? folderPath.substring(0, folderPath.lastIndexOf('\\'))
         : folderPath
 
-    const { getObject } = await import('../services/tauri')
-    let successCount = 0
-    let failCount = 0
+    let startedCount = 0
 
-    // Create a persistent progress toast
-    const progressToastId = toast.loading(`${t('downloading')} 0/${selectedFiles.length}`)
-
+    // Start streaming downloads for all selected files
     for (const key of selectedFiles) {
       try {
         const fileName = getFileName(key)
         const filePath = `${directory}/${fileName}`
 
-        const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-        await writeBinaryFile(filePath, new Uint8Array(response.content))
-        successCount++
-
-        // Update progress toast
-        const totalProcessed = successCount + failCount
-        const progress = Math.round((totalProcessed / selectedFiles.length) * 100)
-        toast.updateToast(progressToastId, {
-          message: `${t('downloading')} ${totalProcessed}/${selectedFiles.length}`,
-          progress,
-        })
+        // Start streaming download (non-blocking, progress via events)
+        await rustDownloadManager.startDownload(
+          appStore.currentProfile.id,
+          appStore.currentBucket,
+          key,
+          filePath
+        )
+        startedCount++
       } catch (e) {
-        logger.error(`Failed to download ${key}:`, e)
-        failCount++
-
-        // Update progress toast even on failure
-        const totalProcessed = successCount + failCount
-        const progress = Math.round((totalProcessed / selectedFiles.length) * 100)
-        toast.updateToast(progressToastId, {
-          message: `${t('downloading')} ${totalProcessed}/${selectedFiles.length}`,
-          progress,
-        })
+        logger.error(`Failed to start download for ${key}:`, e)
       }
     }
 
-    // Complete the progress toast
+    // Clear selection and show toast
     clearSelection()
-
-    if (failCount === 0) {
-      toast.completeToast(
-        progressToastId,
-        t('filesDownloadedSuccess').replace('{0}', String(successCount)),
-        'success'
-      )
-    } else {
-      toast.completeToast(
-        progressToastId,
-        t('downloadPartialSuccess')
-          .replace('{0}', String(successCount))
-          .replace('{1}', String(failCount)),
-        failCount < selectedFiles.length ? 'success' : 'error'
-      )
-    }
+    toast.success(`Started ${startedCount} download(s). Check progress panel.`)
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -5148,6 +5168,8 @@ onMounted(async () => {
   window.addEventListener('click', handleClickOutside)
   // Add upload completion listener for optimistic updates
   window.addEventListener('upload:object-completed', handleUploadCompleted)
+  // Setup clipboard paste listener for CTRL+V / CMD+V uploads
+  clipboardUpload.setupPasteListener()
 
   unlistenFileDrop = await listen('tauri://file-drop', (event) => {
     isDraggingOver.value = false
@@ -5169,6 +5191,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('click', handleClickOutside)
   window.removeEventListener('upload:object-completed', handleUploadCompleted)
+  clipboardUpload.cleanupPasteListener()
   if (unlistenFileDrop) unlistenFileDrop()
   if (unlistenFileDropHover) unlistenFileDropHover()
   if (unlistenFileDropCancelled) unlistenFileDropCancelled()

@@ -2,6 +2,7 @@ import { ref, onMounted } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   startInitialIndex,
+  cancelIndexing as cancelIndexingService,
   getBucketIndexStats,
   getPrefixIndexStats,
   clearBucketIndex,
@@ -50,8 +51,15 @@ async function setupGlobalEventListener() {
           isComplete: event.payload.is_complete,
           lastIndexed: Date.now(),
         }
-      } else if (event.payload.status === 'failed') {
+      } else if (event.payload.status === 'failed' || event.payload.status === 'cancelled') {
         indexingBuckets.value[key] = false
+        // For cancelled, we still have partial data indexed
+        if (event.payload.status === 'cancelled' && event.payload.objects_indexed > 0) {
+          bucketIndexStatus.value[key] = {
+            isComplete: false,
+            lastIndexed: Date.now(),
+          }
+        }
       } else {
         indexingBuckets.value[key] = true
       }
@@ -75,7 +83,7 @@ export function useIndexManager() {
    * Start initial indexation for a bucket
    * @param profileId Profile ID
    * @param bucketName Bucket name
-   * @param maxRequests Maximum number of ListObjectsV2 requests (default from settings)
+   * @param maxRequests Maximum number of ListObjectsV2 requests (default from settings, 0 = unlimited)
    */
   async function startIndexing(
     profileId: string,
@@ -89,7 +97,8 @@ export function useIndexManager() {
       indexingBuckets.value[key] = true
 
       // Use maxRequests from parameter or from settings
-      const effectiveMaxRequests = maxRequests ?? settingsStore.maxInitialIndexRequests
+      // Special case: if maxRequests is explicitly 0, pass 0 for unlimited
+      const effectiveMaxRequests = maxRequests !== undefined ? maxRequests : settingsStore.maxInitialIndexRequests
 
       // Pass batchSize from settings to backend
       const result = await startInitialIndex(
@@ -110,6 +119,40 @@ export function useIndexManager() {
       return null
     } finally {
       indexingBuckets.value[key] = false
+    }
+  }
+
+  /**
+   * Start full indexation for a bucket (no request limit)
+   * This will index ALL objects in the bucket regardless of size
+   * @param profileId Profile ID
+   * @param bucketName Bucket name
+   */
+  async function startFullIndexing(
+    profileId: string,
+    bucketName: string
+  ): Promise<InitialIndexResult | null> {
+    // Pass 0 as maxRequests to indicate no limit
+    return startIndexing(profileId, bucketName, 0)
+  }
+
+  /**
+   * Cancel an active indexing operation
+   * The partial index is preserved and can be resumed later
+   * @param profileId Profile ID
+   * @param bucketName Bucket name
+   * @returns true if cancellation was successful
+   */
+  async function cancelIndexing(
+    profileId: string,
+    bucketName: string
+  ): Promise<boolean> {
+    try {
+      await cancelIndexingService(profileId, bucketName)
+      return true
+    } catch (error) {
+      logger.error('Failed to cancel indexing', error)
+      return false
     }
   }
 
@@ -242,22 +285,22 @@ export function useIndexManager() {
 
   /**
    * Check if index is valid (not too old)
+   * Uses indexValidityHours from settings store
    * @param profileId Profile ID
    * @param bucketName Bucket name
-   * @param maxAgeHours Maximum age in hours (default: 24)
    */
   async function isIndexValid(
     profileId: string,
-    bucketName: string,
-    maxAgeHours: number = 24
+    bucketName: string
   ): Promise<boolean> {
     try {
+      const settingsStore = useSettingsStore()
       const stats = await getIndexStats(profileId, bucketName)
       if (!stats || !stats.last_indexed_at) {
         return false
       }
       const age = Date.now() - stats.last_indexed_at
-      const maxAgeMs = maxAgeHours * 60 * 60 * 1000
+      const maxAgeMs = settingsStore.indexValidityHours * 60 * 60 * 1000
       return age < maxAgeMs
     } catch {
       return false
@@ -281,6 +324,8 @@ export function useIndexManager() {
   return {
     // Methods
     startIndexing,
+    startFullIndexing,
+    cancelIndexing,
     getIndexStats,
     getFolderStats,
     isIndexed,

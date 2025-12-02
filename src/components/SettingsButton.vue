@@ -1,30 +1,27 @@
 <template>
   <div>
-    <Tooltip :text="t('settings')" side="top">
-      <span class="inline-block w-full">
-        <Button
-          variant="ghost"
-          class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
-          @click="showSettingsModal = true"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="lucide lucide-settings"
-          >
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        </Button>
-      </span>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
+      @click="showSettingsModal = true"
+      v-tooltip="t('settings')"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="lucide lucide-settings"
+      >
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    </Button>
 
     <!-- Settings Modal -->
     <Dialog v-model:open="showSettingsModal">
@@ -324,69 +321,12 @@
                   <span class="text-sm text-muted-foreground">MB</span>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <!-- SEARCH TAB -->
-          <div v-if="activeTab === 'search'" class="space-y-6">
-            <!-- Index Settings Section -->
-            <div class="space-y-4 pb-4 border-b">
-              <div>
-                <h3 class="text-sm font-semibold">{{ t('indexSettings') }}</h3>
-                <p class="text-sm text-muted-foreground">{{ t('indexSettingsDescription') }}</p>
-              </div>
-
-              <!-- Index Validity Hours Setting -->
-              <div class="space-y-3">
-                <div>
-                  <label class="text-sm font-medium">{{ t('indexValidityHours') }}</label>
-                  <p class="text-sm text-muted-foreground">{{
-                    t('indexValidityHoursDescription')
-                  }}</p>
-                </div>
-                <div class="flex items-center gap-2 max-w-xs">
-                  <Input
-                    type="number"
-                    :model-value="settingsStore.indexValidityHours"
-                    @change="(e: Event) => settingsStore.setIndexValidityHours(Number((e.target as HTMLInputElement).value))"
-                    min="1"
-                    max="48"
-                    class="flex-1"
-                  />
-                  <span class="text-sm text-muted-foreground">{{ t('hours') }}</span>
-                </div>
-              </div>
-
-              <!-- Index Auto-Build Threshold Setting -->
-              <div class="space-y-3">
-                <div>
-                  <label class="text-sm font-medium">{{ t('indexAutoBuildThreshold') }}</label>
-                  <p class="text-sm text-muted-foreground">{{
-                    t('indexAutoBuildThresholdDescription')
-                  }}</p>
-                </div>
-                <div class="flex items-center gap-2 max-w-xs">
-                  <Input
-                    type="number"
-                    :model-value="settingsStore.indexAutoBuildThreshold"
-                    @change="(e: Event) => settingsStore.setIndexAutoBuildThreshold(Number((e.target as HTMLInputElement).value))"
-                    min="100"
-                    max="100000"
-                    class="flex-1"
-                  />
-                  <span class="text-sm text-muted-foreground">{{ t('objects') }}</span>
-                </div>
-              </div>
 
               <!-- Max Initial Index Requests Setting -->
-              <div class="space-y-3">
-                <div>
-                  <label class="text-sm font-medium">{{ t('maxInitialIndexRequests') }}</label>
-                  <p class="text-sm text-muted-foreground">{{
-                    t('maxInitialIndexRequestsDescription')
-                  }}</p>
-                </div>
-                <div class="flex items-center gap-2 max-w-xs">
+              <div class="space-y-2">
+                <label class="text-sm font-medium">{{ t('maxInitialIndexRequests') }}</label>
+                <p class="text-xs text-muted-foreground">{{ t('maxInitialIndexRequestsDescription') }}</p>
+                <div class="flex items-center gap-2">
                   <Input
                     type="number"
                     :model-value="settingsStore.maxInitialIndexRequests"
@@ -397,6 +337,26 @@
                   />
                   <span class="text-sm text-muted-foreground">{{ t('requests') }}</span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SEARCH TAB -->
+          <div v-if="activeTab === 'search'" class="space-y-6">
+            <!-- Index Validity Hours Setting -->
+            <div class="space-y-2 pb-4 border-b">
+              <label class="text-sm font-medium">{{ t('indexValidityHours') }}</label>
+              <p class="text-xs text-muted-foreground">{{ t('indexValidityHoursDescription') }}</p>
+              <div class="flex items-center gap-2 max-w-xs">
+                <Input
+                  type="number"
+                  :model-value="settingsStore.indexValidityHours"
+                  @change="(e: Event) => settingsStore.setIndexValidityHours(Number((e.target as HTMLInputElement).value))"
+                  min="1"
+                  max="48"
+                  class="flex-1"
+                />
+                <span class="text-sm text-muted-foreground">{{ t('hours') }}</span>
               </div>
             </div>
 
@@ -508,7 +468,6 @@ import { getIndexManager } from '../composables/useIndexManager'
 import { useToast } from '../composables/useToast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tooltip } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
