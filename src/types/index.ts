@@ -8,6 +8,7 @@ export interface Profile {
   secret_key: string
   session_token?: string
   path_style: boolean
+  enabled?: boolean // Whether this profile is visible in the sidebar (default: true)
 }
 
 // Test Connection

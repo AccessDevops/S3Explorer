@@ -207,13 +207,6 @@ where
         }
     }
 
-    /// Verifier si une cle existe dans le cache sans la toucher
-    ///
-    /// Ne met pas a jour le timestamp d'acces (pas d'impact sur LRU)
-    pub fn contains(&self, key: &K) -> bool {
-        self.cache.contains_key(key)
-    }
-
     /// Inserer une valeur dans le cache
     ///
     /// Si la capacite max est atteinte, evince l'entree LRU
@@ -259,14 +252,6 @@ where
         self.cache.invalidate_all();
     }
 
-    /// Forcer le nettoyage des entrees expirees
-    ///
-    /// Normalement fait automatiquement en background,
-    /// mais peut etre appele manuellement si necessaire
-    pub fn run_pending_tasks(&self) {
-        self.cache.run_pending_tasks();
-    }
-
     /// Obtenir les metriques du cache
     pub fn metrics(&self) -> CacheMetricsSnapshot {
         self.metrics.snapshot()
@@ -275,21 +260,6 @@ where
     /// Nombre d'entrees actuellement en cache
     pub fn len(&self) -> u64 {
         self.cache.entry_count()
-    }
-
-    /// Verifier si le cache est vide
-    pub fn is_empty(&self) -> bool {
-        self.cache.entry_count() == 0
-    }
-
-    /// Obtenir la configuration du cache
-    pub fn config(&self) -> &CacheConfig {
-        &self.config
-    }
-
-    /// Obtenir le nom du cache
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     /// Obtenir un rapport de statut complet

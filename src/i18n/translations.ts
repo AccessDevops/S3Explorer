@@ -71,6 +71,17 @@ export const translations = {
     pathStyle: 'Force path-style addressing (required for MinIO)',
     configureS3:
       'Configure your S3 connection settings. Supports AWS, MinIO, Backblaze, and other S3-compatible services.',
+    manageConnections: 'Manage Connections',
+    connectionList: 'Connection List',
+    connectionListDescription: 'View and manage all your S3 connections',
+    newConnection: 'New Connection',
+    enableConnection: 'Enable Connection',
+    disableConnection: 'Disable Connection',
+    connectionDisabled: 'Disabled',
+    connectionEnabled: 'Enabled',
+    endpointDefault: 'AWS Default',
+    noConnections: 'No connections configured',
+    toggleConnection: 'Toggle connection visibility',
 
     // Buckets
     buckets: 'Buckets',
@@ -544,6 +555,17 @@ export const translations = {
     pathStyle: "Forcer l'adressage par chemin (requis pour MinIO)",
     configureS3:
       'Configurez vos paramètres de connexion S3. Prend en charge AWS, MinIO, Backblaze et autres services compatibles S3.',
+    manageConnections: 'Gérer les connexions',
+    connectionList: 'Liste des connexions',
+    connectionListDescription: 'Voir et gérer toutes vos connexions S3',
+    newConnection: 'Nouvelle connexion',
+    enableConnection: 'Activer la connexion',
+    disableConnection: 'Désactiver la connexion',
+    connectionDisabled: 'Désactivée',
+    connectionEnabled: 'Activée',
+    endpointDefault: 'AWS par défaut',
+    noConnections: 'Aucune connexion configurée',
+    toggleConnection: 'Basculer la visibilité de la connexion',
 
     // Buckets
     buckets: 'Buckets',

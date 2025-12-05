@@ -590,16 +590,6 @@ impl IndexManager {
         self.db.clear_bucket_index(bucket_name)
     }
 
-    /// Purger les objets obsoletes
-    pub fn purge_stale(&self, bucket_name: &str, stale_hours: u32) -> Result<i64, AppError> {
-        self.db.purge_stale_objects(bucket_name, stale_hours)
-    }
-
-    /// Obtenir les informations d'un bucket
-    pub fn get_bucket_info(&self, bucket_name: &str) -> Result<Option<BucketInfo>, AppError> {
-        self.db.get_bucket_info(bucket_name)
-    }
-
     /// Obtenir le statut d'un prefixe
     pub fn get_prefix_status(
         &self,
@@ -671,11 +661,6 @@ pub fn clear_all_index_managers() {
 /// Retourne les metriques (hits, misses, evictions) et la configuration.
 pub fn get_index_cache_status() -> CacheStatus {
     INDEX_MANAGERS.status()
-}
-
-/// Verifier si un profil est en cache
-pub fn is_index_manager_cached(profile_id: &str) -> bool {
-    INDEX_MANAGERS.contains(&profile_id.to_string())
 }
 
 // ============================================================================

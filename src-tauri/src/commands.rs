@@ -2987,7 +2987,11 @@ fn parse_uri_list(text: &str) -> Vec<String> {
 }
 
 /// Fallback implementation using arboard text
-#[cfg(any(target_os = "linux", target_os = "windows", not(any(target_os = "macos", target_os = "windows", target_os = "linux"))))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux"))
+))]
 fn read_clipboard_files_fallback() -> Result<Vec<String>, String> {
     use arboard::Clipboard;
 

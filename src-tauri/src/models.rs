@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::Crypto;
 use crate::errors::AppError;
 
+/// Helper function for serde default
+fn default_true() -> bool {
+    true
+}
+
 /// S3 connection profile (decrypted, used at runtime)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
@@ -14,6 +19,8 @@ pub struct Profile {
     pub secret_key: String,
     pub session_token: Option<String>,
     pub path_style: bool, // Force path-style addressing
+    #[serde(default = "default_true")]
+    pub enabled: bool, // Whether this profile is visible in the sidebar
 }
 
 /// S3 connection profile with encrypted credentials (stored on disk)
@@ -33,6 +40,9 @@ pub struct EncryptedProfile {
     /// Version flag to detect encrypted vs plaintext profiles
     #[serde(default)]
     pub encrypted: bool,
+    /// Whether this profile is visible in the sidebar
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 impl Profile {
@@ -48,6 +58,7 @@ impl Profile {
             session_token_encrypted: crypto.encrypt_option(self.session_token.as_deref())?,
             path_style: self.path_style,
             encrypted: true,
+            enabled: self.enabled,
         })
     }
 }
@@ -80,6 +91,7 @@ impl EncryptedProfile {
             secret_key,
             session_token,
             path_style: self.path_style,
+            enabled: self.enabled,
         })
     }
 
@@ -872,16 +884,6 @@ pub struct BucketIndexMetadata {
     pub last_indexed_at: Option<i64>,
     /// Estimated size of the index data for this bucket (in bytes)
     pub estimated_index_size: i64,
-}
-
-/// Résultat de recherche dans l'index
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub objects: Vec<S3Object>,
-    pub query: String,
-    pub total_found: usize,
-    pub from_index: bool,
-    pub is_complete: bool,
 }
 
 // ============================================================================

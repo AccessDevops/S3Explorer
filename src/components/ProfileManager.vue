@@ -1,7 +1,13 @@
 <template>
   <div class="p-4 border-b border-white/10">
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-semibold mr-2">{{ t('connections') }}</h3>
+      <h3
+        class="text-lg font-semibold mr-2 cursor-pointer hover:text-primary transition-colors"
+        @click="showConnectionListModal = true"
+        v-tooltip="t('manageConnections')"
+      >
+        {{ t('connections') }}
+      </h3>
       <div class="flex items-center gap-3">
         <!-- Search bar for filtering profiles -->
         <div class="relative">
@@ -107,6 +113,13 @@
         </div>
       </div>
     </div>
+
+    <!-- Connection List Modal -->
+    <ConnectionListModal
+      v-model:open="showConnectionListModal"
+      @edit="editProfileHandler"
+      @create="openAddModal"
+    />
 
     <!-- Add/Edit Profile Modal -->
     <Dialog v-model:open="showAddModal">
@@ -282,11 +295,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { validateEndpoint, validateRegion } from '../utils/validators'
+import ConnectionListModal from './ConnectionListModal.vue'
 
 const appStore = useAppStore()
 const { t } = useI18n()
 const dialog = useDialog()
 const showAddModal = ref(false)
+const showConnectionListModal = ref(false)
 const editingProfile = ref<Profile | null>(null)
 const testResult = ref<TestConnectionResponse | null>(null)
 const isTesting = ref(false)
@@ -294,14 +309,17 @@ const isTesting = ref(false)
 // Search query for filtering profiles
 const profileSearchQuery = ref('')
 
-// Filtered profiles based on search query
+// Filtered profiles based on search query (excluding disabled profiles)
 const filteredProfiles = computed(() => {
+  // First filter out disabled profiles
+  const enabledProfiles = appStore.profiles.filter(p => p.enabled !== false)
+
   if (!profileSearchQuery.value.trim()) {
-    return appStore.profiles
+    return enabledProfiles
   }
 
   const query = profileSearchQuery.value.toLowerCase()
-  return appStore.profiles.filter(profile =>
+  return enabledProfiles.filter(profile =>
     profile.name.toLowerCase().includes(query)
   )
 })

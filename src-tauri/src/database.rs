@@ -954,30 +954,6 @@ impl DatabaseManager {
         Ok(results)
     }
 
-    /// Verifier si un prefixe est marque complet (sans verifier les enfants)
-    /// Utilise pour l'affichage rapide
-    pub fn is_prefix_self_complete(
-        &self,
-        bucket_name: &str,
-        prefix: &str,
-    ) -> Result<bool, AppError> {
-        let conn = self.get_connection()?;
-
-        let result: bool = conn
-            .query_row(
-                r#"
-            SELECT COALESCE(is_complete, FALSE)
-            FROM prefix_status
-            WHERE profile_id = ?1 AND bucket_name = ?2 AND prefix = ?3
-            "#,
-                params![self.profile_id, bucket_name, prefix],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        Ok(result)
-    }
-
     /// Verifier si un prefixe est complet (incluant tous ses sous-prefixes)
     ///
     /// Un prefixe est complet si:
@@ -1386,29 +1362,6 @@ impl DatabaseManager {
     // Maintenance
     // ========================================================================
 
-    /// Purger les objets obsoletes (plus vieux que stale_hours)
-    pub fn purge_stale_objects(
-        &self,
-        bucket_name: &str,
-        stale_hours: u32,
-    ) -> Result<i64, AppError> {
-        let conn = self.get_connection()?;
-
-        let cutoff = chrono::Utc::now().timestamp_millis() - (stale_hours as i64 * 60 * 60 * 1000);
-
-        let deleted = conn.execute(
-            r#"
-            DELETE FROM objects
-            WHERE profile_id = ?1
-              AND bucket_name = ?2
-              AND indexed_at < ?3
-            "#,
-            params![self.profile_id, bucket_name, cutoff],
-        )?;
-
-        Ok(deleted as i64)
-    }
-
     /// Vider tout l'index d'un bucket
     pub fn clear_bucket_index(&self, bucket_name: &str) -> Result<(), AppError> {
         let mut conn = self.get_connection()?;
@@ -1431,18 +1384,6 @@ impl DatabaseManager {
 
         tx.commit()?;
         Ok(())
-    }
-
-    /// Optimiser la base de donnees (VACUUM)
-    pub fn optimize(&self) -> Result<(), AppError> {
-        let conn = self.get_connection()?;
-        conn.execute_batch("VACUUM; ANALYZE;")?;
-        Ok(())
-    }
-
-    /// Obtenir le profile_id
-    pub fn profile_id(&self) -> &str {
-        &self.profile_id
     }
 }
 
@@ -1507,11 +1448,6 @@ pub fn clear_all_db_managers() {
 /// Retourne les metriques (hits, misses, evictions) et la configuration.
 pub fn get_db_cache_status() -> CacheStatus {
     DB_MANAGERS.status()
-}
-
-/// Verifier si un profil est en cache
-pub fn is_db_manager_cached(profile_id: &str) -> bool {
-    DB_MANAGERS.contains(&profile_id.to_string())
 }
 
 // ============================================================================
