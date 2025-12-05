@@ -293,3 +293,14 @@ export interface BucketConfigurationResponse {
   versioning: BucketVersioningResponse
   encryption: BucketEncryptionResponse
 }
+
+// ============================================================================
+// Object Lock Types
+// ============================================================================
+
+export interface ObjectLockStatus {
+  is_locked: boolean
+  retention_mode: 'GOVERNANCE' | 'COMPLIANCE' | null
+  retain_until_date: string | null
+  legal_hold: boolean
+}

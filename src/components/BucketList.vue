@@ -70,7 +70,12 @@
         "
         @click="selectBucket(bucket.name)"
       >
-        <span class="text-lg">🗄️</span>
+        <BucketEmojiPicker
+          v-if="appStore.currentProfile"
+          :profile-id="appStore.currentProfile.id"
+          :bucket-name="bucket.name"
+        />
+        <span v-else class="text-lg">🗄️</span>
         <!-- Main content -->
         <div class="flex-1 min-w-0">
           <div class="truncate">{{ bucket.name }}</div>
@@ -396,6 +401,7 @@ import { formatSize, formatDate } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { getIndexManager } from '../composables/useIndexManager'
 import BucketSettingsModal from './BucketSettingsModal.vue'
+import BucketEmojiPicker from './BucketEmojiPicker.vue'
 import type { BucketIndexStats } from '../types'
 
 const appStore = useAppStore()

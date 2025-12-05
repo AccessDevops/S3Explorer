@@ -16,6 +16,8 @@ import type {
   ErrorStats,
   BucketUsageStats,
   HourlyStats,
+  DailyDistribution,
+  WeeklyDistribution,
   S3Pricing,
 } from '@/types/metrics'
 import { DEFAULT_S3_PRICING, calculateCost } from '@/types/metrics'
@@ -65,6 +67,22 @@ interface BackendBucketUsageStats {
   bucket_name: string
   request_count: number
   bytes_transferred: number
+}
+
+interface BackendDailyDistribution {
+  date: string
+  day_label: string
+  count: number
+  success_count: number
+  failed_count: number
+}
+
+interface BackendWeeklyDistribution {
+  week_start: string
+  week_label: string
+  count: number
+  success_count: number
+  failed_count: number
 }
 
 interface StorageInfo {
@@ -272,6 +290,69 @@ export function useMetrics() {
     }))
   }
 
+  async function getHourlyStatsPeriod(days: number): Promise<HourlyStats[]> {
+    const stats = await invoke<BackendHourlyStats[]>('get_metrics_hourly_period', { days })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      hour: s.hour,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getDailyDistribution(days: number): Promise<DailyDistribution[]> {
+    const stats = await invoke<BackendDailyDistribution[]>('get_metrics_daily_distribution', { days })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      date: s.date,
+      dayLabel: s.day_label,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getWeeklyDistribution(days: number): Promise<WeeklyDistribution[]> {
+    const stats = await invoke<BackendWeeklyDistribution[]>('get_metrics_weekly_distribution', { days })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      weekStart: s.week_start,
+      weekLabel: s.week_label,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getPeriodStats(days: number): Promise<DailyStats> {
+    const pricing = getCurrentPricing()
+    const stats = await invoke<BackendDailyStats>('get_metrics_period', {
+      days,
+      getPerThousand: pricing.get_per_thousand,
+      putPerThousand: pricing.put_per_thousand,
+      listPerThousand: pricing.list_per_thousand,
+    })
+
+    // Convert snake_case from backend to camelCase
+    return {
+      date: stats.date,
+      totalRequests: stats.total_requests,
+      successfulRequests: stats.successful_requests,
+      failedRequests: stats.failed_requests,
+      getRequests: stats.get_requests,
+      putRequests: stats.put_requests,
+      listRequests: stats.list_requests,
+      deleteRequests: stats.delete_requests,
+      estimatedCostUsd: stats.estimated_cost_usd,
+      avgDurationMs: stats.avg_duration_ms,
+      maxDurationMs: stats.max_duration_ms,
+      bytesDownloaded: stats.bytes_downloaded,
+      bytesUploaded: stats.bytes_uploaded,
+      updatedAt: stats.updated_at,
+    }
+  }
+
   async function getOperationStats(days: number): Promise<OperationStats[]> {
     const stats = await invoke<BackendOperationStats[]>('get_metrics_by_operation', { days })
     // Convert snake_case to camelCase and cast string to enum
@@ -364,6 +445,10 @@ export function useMetrics() {
     refreshTodayStats,
     getStatsHistory,
     getHourlyStats,
+    getHourlyStatsPeriod,
+    getDailyDistribution,
+    getWeeklyDistribution,
+    getPeriodStats,
     getOperationStats,
     getErrorStats,
     getTopBuckets,

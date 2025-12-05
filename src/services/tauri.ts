@@ -10,6 +10,7 @@ import type {
   GetObjectTagsResponse,
   ObjectTag,
   GetObjectMetadataResponse,
+  ObjectLockStatus,
   BucketIndexStats,
   PrefixStats,
   PrefixStatus,
@@ -128,6 +129,20 @@ export async function deleteObject(profileId: string, bucket: string, key: strin
     profileId,
     bucket,
     key,
+  })
+}
+
+export async function deleteObjectVersion(
+  profileId: string,
+  bucket: string,
+  key: string,
+  versionId: string
+): Promise<void> {
+  return await invoke('delete_object_version', {
+    profileId,
+    bucket,
+    key,
+    versionId,
   })
 }
 
@@ -262,12 +277,14 @@ export async function downloadFile(
   profileId: string,
   bucket: string,
   key: string,
-  destPath: string
+  destPath: string,
+  versionId?: string
 ): Promise<string> {
   return await invoke('download_file', {
     profileId,
     bucket,
     key,
+    versionId: versionId || null,
     destPath,
   })
 }
@@ -347,6 +364,18 @@ export async function updateObjectMetadata(
     cacheControl: metadata.cache_control,
     expires: metadata.expires,
     metadata: metadata.metadata,
+  })
+}
+
+export async function getObjectLockStatus(
+  profileId: string,
+  bucket: string,
+  key: string
+): Promise<ObjectLockStatus> {
+  return await invoke('get_object_lock_status', {
+    profileId,
+    bucket,
+    key,
   })
 }
 

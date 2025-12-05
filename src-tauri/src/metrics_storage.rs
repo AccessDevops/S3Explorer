@@ -41,6 +41,26 @@ pub struct HourlyStats {
     pub failed_count: i64,
 }
 
+/// Daily distribution statistics
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DailyDistribution {
+    pub date: String,
+    pub day_label: String,
+    pub count: i64,
+    pub success_count: i64,
+    pub failed_count: i64,
+}
+
+/// Weekly distribution statistics
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WeeklyDistribution {
+    pub week_start: String,
+    pub week_label: String,
+    pub count: i64,
+    pub success_count: i64,
+    pub failed_count: i64,
+}
+
 /// Statistics by operation type
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OperationStats {
@@ -220,13 +240,11 @@ CREATE INDEX IF NOT EXISTS idx_cache_date ON metrics_cache_events(date);
 
 /// Get the metrics database path
 fn get_metrics_db_path() -> Result<PathBuf, AppError> {
-    let home = dirs::home_dir().ok_or_else(|| {
-        AppError::ConfigError("Could not determine home directory".to_string())
-    })?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::ConfigError("Could not determine home directory".to_string()))?;
     let app_dir = home.join(".s3explorer");
-    std::fs::create_dir_all(&app_dir).map_err(|e| {
-        AppError::DatabaseError(format!("Failed to create app directory: {}", e))
-    })?;
+    std::fs::create_dir_all(&app_dir)
+        .map_err(|e| AppError::DatabaseError(format!("Failed to create app directory: {}", e)))?;
     Ok(app_dir.join("metrics.db"))
 }
 
@@ -234,18 +252,16 @@ fn get_metrics_db_path() -> Result<PathBuf, AppError> {
 /// Each call creates a new connection - connections are not pooled.
 pub fn get_metrics_db() -> Result<Connection, AppError> {
     let db_path = get_metrics_db_path()?;
-    let conn = Connection::open(&db_path).map_err(|e| {
-        AppError::DatabaseError(format!("Failed to open metrics database: {}", e))
-    })?;
+    let conn = Connection::open(&db_path)
+        .map_err(|e| AppError::DatabaseError(format!("Failed to open metrics database: {}", e)))?;
 
     // Enable WAL mode for better concurrency
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
         .map_err(|e| AppError::DatabaseError(format!("Failed to set pragmas: {}", e)))?;
 
     // Apply schema (CREATE IF NOT EXISTS is idempotent)
-    conn.execute_batch(METRICS_SCHEMA).map_err(|e| {
-        AppError::DatabaseError(format!("Failed to apply metrics schema: {}", e))
-    })?;
+    conn.execute_batch(METRICS_SCHEMA)
+        .map_err(|e| AppError::DatabaseError(format!("Failed to apply metrics schema: {}", e)))?;
 
     Ok(conn)
 }
@@ -276,7 +292,11 @@ pub fn emit_cache_hit(
 ) {
     if let Ok(db) = get_metrics_db() {
         let event = CacheEvent {
-            id: format!("cache-{}-{}", chrono::Utc::now().timestamp_millis(), uuid::Uuid::new_v4()),
+            id: format!(
+                "cache-{}-{}",
+                chrono::Utc::now().timestamp_millis(),
+                uuid::Uuid::new_v4()
+            ),
             timestamp: chrono::Utc::now().timestamp_millis(),
             date: get_today_date(),
             operation: operation.to_string(),
@@ -290,14 +310,14 @@ pub fn emit_cache_hit(
 }
 
 /// Helper to emit a cache miss event (index didn't have data, had to use S3)
-pub fn emit_cache_miss(
-    operation: &str,
-    profile_id: Option<&str>,
-    bucket_name: Option<&str>,
-) {
+pub fn emit_cache_miss(operation: &str, profile_id: Option<&str>, bucket_name: Option<&str>) {
     if let Ok(db) = get_metrics_db() {
         let event = CacheEvent {
-            id: format!("cache-{}-{}", chrono::Utc::now().timestamp_millis(), uuid::Uuid::new_v4()),
+            id: format!(
+                "cache-{}-{}",
+                chrono::Utc::now().timestamp_millis(),
+                uuid::Uuid::new_v4()
+            ),
             timestamp: chrono::Utc::now().timestamp_millis(),
             date: get_today_date(),
             operation: operation.to_string(),
@@ -378,7 +398,10 @@ pub fn record_request(conn: &Connection, event: &S3MetricsEvent) -> Result<(), A
             event.bytes_transferred.map(|b| b as i64),
             event.objects_affected.map(|o| o as i32),
             event.success,
-            event.error_category.as_ref().and_then(error_category_to_string),
+            event
+                .error_category
+                .as_ref()
+                .and_then(error_category_to_string),
             event.error_message,
         ],
     )
@@ -609,6 +632,258 @@ pub fn get_stats_history(
     Ok(stats)
 }
 
+/// Get aggregated stats for a period (sum of all days)
+pub fn get_period_stats(
+    conn: &Connection,
+    days: u32,
+    pricing: &S3Pricing,
+) -> Result<DailyStats, AppError> {
+    let from_date = get_date_days_ago(days - 1);
+    let to_date = get_today_date();
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successful,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN category = 'GET' THEN 1 ELSE 0 END) as get_count,
+                SUM(CASE WHEN category = 'PUT' THEN 1 ELSE 0 END) as put_count,
+                SUM(CASE WHEN category = 'LIST' THEN 1 ELSE 0 END) as list_count,
+                SUM(CASE WHEN category = 'DELETE' THEN 1 ELSE 0 END) as delete_count,
+                AVG(duration_ms) as avg_duration,
+                MAX(duration_ms) as max_duration,
+                SUM(CASE WHEN operation = 'GetObject' THEN COALESCE(bytes_transferred, 0) ELSE 0 END) as bytes_down,
+                SUM(CASE WHEN operation IN ('PutObject', 'UploadPart') THEN COALESCE(bytes_transferred, 0) ELSE 0 END) as bytes_up
+            FROM metrics_requests
+            WHERE date >= ?1 AND date <= ?2
+            "#,
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    let stats = stmt
+        .query_row(params![from_date, to_date], |row| {
+            let total: i64 = row.get(0)?;
+            let successful: i64 = row.get(1)?;
+            let failed: i64 = row.get(2)?;
+            let get_count: i64 = row.get(3)?;
+            let put_count: i64 = row.get(4)?;
+            let list_count: i64 = row.get(5)?;
+            let delete_count: i64 = row.get(6)?;
+            let avg_duration: f64 = row.get::<_, Option<f64>>(7)?.unwrap_or(0.0);
+            let max_duration: i64 = row.get::<_, Option<i64>>(8)?.unwrap_or(0);
+            let bytes_down: i64 = row.get::<_, Option<i64>>(9)?.unwrap_or(0);
+            let bytes_up: i64 = row.get::<_, Option<i64>>(10)?.unwrap_or(0);
+
+            let cost = calculate_cost(get_count, put_count, list_count, delete_count, pricing);
+
+            Ok(DailyStats {
+                date: format!("{} - {}", from_date, to_date),
+                total_requests: total,
+                successful_requests: successful,
+                failed_requests: failed,
+                get_requests: get_count,
+                put_requests: put_count,
+                list_requests: list_count,
+                delete_requests: delete_count,
+                estimated_cost_usd: cost,
+                avg_duration_ms: avg_duration,
+                max_duration_ms: max_duration,
+                bytes_downloaded: bytes_down,
+                bytes_uploaded: bytes_up,
+                updated_at: chrono::Utc::now().timestamp_millis(),
+            })
+        })
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    Ok(stats)
+}
+
+/// Get hourly breakdown aggregated over multiple days
+pub fn get_hourly_stats_period(conn: &Connection, days: u32) -> Result<Vec<HourlyStats>, AppError> {
+    let from_date = get_date_days_ago(days - 1);
+    let to_date = get_today_date();
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                CAST(strftime('%H', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) as hour,
+                COUNT(*) as count,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed_count
+            FROM metrics_requests
+            WHERE date >= ?1 AND date <= ?2
+            GROUP BY hour
+            ORDER BY hour
+            "#,
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    let mut hourly_map: std::collections::HashMap<i32, HourlyStats> = (0..24)
+        .map(|h| {
+            (
+                h,
+                HourlyStats {
+                    hour: h,
+                    count: 0,
+                    success_count: 0,
+                    failed_count: 0,
+                },
+            )
+        })
+        .collect();
+
+    let rows = stmt
+        .query_map(params![from_date, to_date], |row| {
+            Ok(HourlyStats {
+                hour: row.get(0)?,
+                count: row.get(1)?,
+                success_count: row.get(2)?,
+                failed_count: row.get(3)?,
+            })
+        })
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    for row in rows {
+        let stats = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        hourly_map.insert(stats.hour, stats);
+    }
+
+    let mut result: Vec<HourlyStats> = hourly_map.into_values().collect();
+    result.sort_by_key(|s| s.hour);
+    Ok(result)
+}
+
+/// Get daily distribution for a period (used for 7-day view)
+pub fn get_daily_distribution(
+    conn: &Connection,
+    days: u32,
+) -> Result<Vec<DailyDistribution>, AppError> {
+    let from_date = get_date_days_ago(days - 1);
+    let to_date = get_today_date();
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                date,
+                COUNT(*) as count,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed_count
+            FROM metrics_requests
+            WHERE date >= ?1 AND date <= ?2
+            GROUP BY date
+            ORDER BY date
+            "#,
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    let rows = stmt
+        .query_map(params![from_date, to_date], |row| {
+            let date_str: String = row.get(0)?;
+            // Parse the date to get day name
+            let day_label =
+                if let Ok(parsed) = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+                    parsed.format("%a").to_string() // Mon, Tue, etc.
+                } else {
+                    date_str.clone()
+                };
+            Ok(DailyDistribution {
+                date: date_str,
+                day_label,
+                count: row.get(1)?,
+                success_count: row.get(2)?,
+                failed_count: row.get(3)?,
+            })
+        })
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    // Create a map with all days in the range
+    let mut daily_map: std::collections::HashMap<String, DailyDistribution> =
+        std::collections::HashMap::new();
+
+    // Initialize all days in range with zero counts
+    for i in 0..days {
+        let date = get_date_days_ago(days - 1 - i);
+        let day_label = if let Ok(parsed) = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d") {
+            parsed.format("%a").to_string()
+        } else {
+            date.clone()
+        };
+        daily_map.insert(
+            date.clone(),
+            DailyDistribution {
+                date: date.clone(),
+                day_label,
+                count: 0,
+                success_count: 0,
+                failed_count: 0,
+            },
+        );
+    }
+
+    // Fill in actual data
+    for row in rows {
+        let stats = row.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        daily_map.insert(stats.date.clone(), stats);
+    }
+
+    let mut result: Vec<DailyDistribution> = daily_map.into_values().collect();
+    result.sort_by(|a, b| a.date.cmp(&b.date));
+    Ok(result)
+}
+
+/// Get weekly distribution for a period (used for 30-day view)
+pub fn get_weekly_distribution(
+    conn: &Connection,
+    days: u32,
+) -> Result<Vec<WeeklyDistribution>, AppError> {
+    let from_date = get_date_days_ago(days - 1);
+    let to_date = get_today_date();
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                strftime('%Y-%W', date) as week,
+                MIN(date) as week_start,
+                COUNT(*) as count,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed_count
+            FROM metrics_requests
+            WHERE date >= ?1 AND date <= ?2
+            GROUP BY week
+            ORDER BY week
+            "#,
+        )
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    let rows = stmt
+        .query_map(params![from_date, to_date], |row| {
+            let week_start: String = row.get(1)?;
+            // Create week label like "Dec 2" from the week start date
+            let week_label =
+                if let Ok(parsed) = chrono::NaiveDate::parse_from_str(&week_start, "%Y-%m-%d") {
+                    parsed.format("%b %d").to_string()
+                } else {
+                    week_start.clone()
+                };
+            Ok(WeeklyDistribution {
+                week_start,
+                week_label,
+                count: row.get(2)?,
+                success_count: row.get(3)?,
+                failed_count: row.get(4)?,
+            })
+        })
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::DatabaseError(e.to_string()))
+}
+
 /// Get hourly breakdown for a specific date
 pub fn get_hourly_stats(conn: &Connection, date: &str) -> Result<Vec<HourlyStats>, AppError> {
     let mut stmt = conn
@@ -627,13 +902,19 @@ pub fn get_hourly_stats(conn: &Connection, date: &str) -> Result<Vec<HourlyStats
         )
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    let mut hourly_map: std::collections::HashMap<i32, HourlyStats> =
-        (0..24).map(|h| (h, HourlyStats {
-            hour: h,
-            count: 0,
-            success_count: 0,
-            failed_count: 0,
-        })).collect();
+    let mut hourly_map: std::collections::HashMap<i32, HourlyStats> = (0..24)
+        .map(|h| {
+            (
+                h,
+                HourlyStats {
+                    hour: h,
+                    count: 0,
+                    success_count: 0,
+                    failed_count: 0,
+                },
+            )
+        })
+        .collect();
 
     let rows = stmt
         .query_map(params![date], |row| {
@@ -1013,15 +1294,15 @@ pub fn get_today_cache_stats(
 /// Get storage information
 pub fn get_storage_info(conn: &Connection) -> Result<StorageInfo, AppError> {
     let request_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM metrics_requests", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM metrics_requests", [], |row| {
+            row.get(0)
+        })
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
     let oldest_date: Option<String> = conn
-        .query_row(
-            "SELECT MIN(date) FROM metrics_requests",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT MIN(date) FROM metrics_requests", [], |row| {
+            row.get(0)
+        })
         .optional()
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
         .flatten();
@@ -1090,7 +1371,8 @@ pub fn auto_purge_on_startup() {
     match get_metrics_db() {
         Ok(conn) => {
             let requests_deleted = purge_old_data(&conn, DEFAULT_RETENTION_DAYS).unwrap_or(0);
-            let cache_events_deleted = purge_cache_events(&conn, DEFAULT_RETENTION_DAYS).unwrap_or(0);
+            let cache_events_deleted =
+                purge_cache_events(&conn, DEFAULT_RETENTION_DAYS).unwrap_or(0);
 
             if requests_deleted > 0 || cache_events_deleted > 0 {
                 println!(

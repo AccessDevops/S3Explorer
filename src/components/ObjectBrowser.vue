@@ -410,6 +410,19 @@
                 {{ obj.key.substring(0, obj.key.lastIndexOf('/')) }}/
               </div>
             </div>
+            <!-- Storage Class Badge -->
+            <Tooltip
+              v-if="getStorageClassInfo(obj.storage_class)"
+              :text="getStorageClassInfo(obj.storage_class)!.tooltip"
+              side="top"
+            >
+              <span
+                class="text-[9px] font-medium px-1.5 py-0.5 rounded flex-shrink-0"
+                :class="[getStorageClassInfo(obj.storage_class)!.colorClass, getStorageClassInfo(obj.storage_class)!.bgClass]"
+              >
+                {{ getStorageClassInfo(obj.storage_class)!.label }}
+              </span>
+            </Tooltip>
             <div class="text-sm text-muted-foreground w-24 flex-shrink-0 text-right tabular-nums">
               {{ formatSize(obj.size) }}
             </div>
@@ -523,10 +536,13 @@
                 'ml-4'
               ]"
             >
+              <!-- Spacer to align with parent's version arrow -->
               <div class="flex-shrink-0 w-4"></div>
+              <!-- Version icon -->
               <div class="flex-shrink-0">
                 <PhClock :size="iconSize" class="text-muted-foreground" weight="duotone" />
               </div>
+              <!-- Version ID and badge -->
               <div class="flex-1 min-w-0">
                 <div class="font-medium truncate" :class="textSize">
                   {{ version.version_id.substring(0, 12) }}...
@@ -537,23 +553,62 @@
                     {{ t('latest') }}
                   </span>
                 </div>
-                <div class="text-xs text-muted-foreground truncate">
-                  {{ formatDate(version.last_modified) }}
-                </div>
               </div>
+              <!-- Size column - aligned with parent -->
               <div class="text-sm text-muted-foreground w-24 flex-shrink-0 text-right tabular-nums">
                 {{ formatSize(version.size) }}
               </div>
-              <div class="w-40 flex-shrink-0"></div>
-              <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity w-36 flex-shrink-0 justify-end">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  @click.stop="downloadObjectVersion(version)"
-                  v-tooltip="t('download')"
-                >
-                  <PhDownloadSimple :size="16" />
-                </Button>
+              <!-- Date column - aligned with parent -->
+              <div class="text-sm text-muted-foreground w-40 flex-shrink-0 text-right tabular-nums">
+                {{ formatDate(version.last_modified) }}
+              </div>
+              <!-- Actions menu - aligned with parent -->
+              <div
+                class="flex gap-1 transition-opacity w-20 flex-shrink-0 justify-end"
+                :class="'opacity-0 group-hover:opacity-100'"
+              >
+                <div class="relative" @mouseleave="showVersionActionsMenu = null">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    @click.stop="showVersionActionsMenu = showVersionActionsMenu === version.version_id ? null : version.version_id"
+                    @mouseenter="showVersionActionsMenu = version.version_id"
+                  >
+                    <PhDotsThree :size="16" weight="bold" />
+                  </Button>
+
+                  <!-- Version actions dropdown menu -->
+                  <Transition name="fade">
+                    <div
+                      v-if="showVersionActionsMenu === version.version_id"
+                      @click.stop
+                      class="absolute right-full top-0 z-[9999]"
+                    >
+                      <div class="min-w-[140px] rounded-md border bg-card backdrop-blur-sm p-0.5 text-card-foreground shadow-xl">
+                        <!-- Download version -->
+                        <button
+                          @click="downloadObjectVersion(version); showVersionActionsMenu = null"
+                          class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                        >
+                          <PhDownloadSimple :size="14" />
+                          {{ t('download') }}
+                        </button>
+
+                        <!-- Divider -->
+                        <div class="my-0.5 h-px bg-border"></div>
+
+                        <!-- Delete version -->
+                        <button
+                          @click="deleteVersionConfirm(version); showVersionActionsMenu = null"
+                          class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-destructive/10 text-destructive text-left"
+                        >
+                          <PhTrash :size="14" />
+                          {{ t('deleteVersion') }}
+                        </button>
+                      </div>
+                    </div>
+                  </Transition>
+                </div>
               </div>
             </div>
           </div>
@@ -801,6 +856,34 @@
             >
               {{ viewerContentType }}
             </span>
+            <!-- Object Lock Status Badge -->
+            <Tooltip v-if="viewModalLockStatus?.is_locked" side="bottom">
+              <span
+                class="text-xs font-medium text-red-600 dark:text-red-400 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded flex items-center gap-1"
+              >
+                <PhLock :size="14" weight="fill" />
+                {{ t('objectLocked') }}
+              </span>
+              <template #content>
+                <div class="text-xs space-y-1 max-w-xs">
+                  <div v-if="viewModalLockStatus.retention_mode" class="flex justify-between gap-4">
+                    <span class="text-muted-foreground">{{ t('retentionMode') }}:</span>
+                    <span class="font-medium">{{ viewModalLockStatus.retention_mode }}</span>
+                  </div>
+                  <div v-if="viewModalLockStatus.retain_until_date" class="flex justify-between gap-4">
+                    <span class="text-muted-foreground">{{ t('retainUntil') }}:</span>
+                    <span class="font-medium">{{ formatLockDate(viewModalLockStatus.retain_until_date) }}</span>
+                  </div>
+                  <div v-if="viewModalLockStatus.legal_hold" class="flex justify-between gap-4">
+                    <span class="text-muted-foreground">{{ t('legalHold') }}:</span>
+                    <span class="font-medium text-red-500">{{ t('active') }}</span>
+                  </div>
+                  <div v-if="!viewModalLockStatus.retention_mode && !viewModalLockStatus.legal_hold" class="text-muted-foreground">
+                    {{ t('objectLocked') }}
+                  </div>
+                </div>
+              </template>
+            </Tooltip>
           </DialogTitle>
         </DialogHeader>
 
@@ -1675,9 +1758,11 @@ import { useRustUploadManager } from '../composables/useRustUploadManager'
 import { useRustDownloadManager } from '../composables/useRustDownloadManager'
 import { useOptimisticBatch } from '../composables/useOptimisticBatch'
 import { useClipboardUpload } from '../composables/useClipboardUpload'
+import { useObjectLock } from '../composables/useObjectLock'
 import {
   createFolder as createFolderService,
   deleteObject,
+  deleteObjectVersion,
   calculateFolderSize,
   deleteFolder,
   putObject,
@@ -1694,7 +1779,7 @@ import {
 import { save, open } from '@tauri-apps/api/dialog'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse } from '../types'
+import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse, ObjectLockStatus } from '../types'
 import ObjectViewer from './ObjectViewer.vue'
 import ImageEditor from './ImageEditor.vue'
 import ContextMenu from './ContextMenu.vue'
@@ -1712,6 +1797,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tooltip } from '@/components/ui/tooltip'
 import {
   PhFolder,
   PhImage,
@@ -1810,6 +1896,7 @@ const optimisticBatch = useOptimisticBatch()
 const clipboardUpload = useClipboardUpload()
 const indexManager = getIndexManager()
 const bucketStatsComposable = useBucketStats()
+const objectLock = useObjectLock()
 
 // Grouped reactive state - Modals
 const modals = reactive({
@@ -2063,6 +2150,8 @@ const draggingFolder = ref<string | null>(null)
 const viewingObject = ref<S3Object | null>(null)
 const showViewModal = ref(false)
 const viewModalVersions = ref<ObjectVersion[]>([])
+const viewModalLockStatus = ref<ObjectLockStatus | null>(null)
+const loadingLockStatus = ref(false)
 
 // Image editor refs (rendered outside dialog to avoid focus trap)
 const showImageEditor = ref(false)
@@ -2122,11 +2211,11 @@ const sortBy = ref<SortColumn>('name')
 const sortOrder = ref<SortOrder>('asc')
 
 // Modal refs (already using modals grouped state, but some legacy refs)
-const showRenameModal = ref(false)
+const _showRenameModal = ref(false)
 
 // Rename refs (already using rename grouped state)
-const renamingObject = ref<S3Object | null>(null)
-const newFileName = ref('')
+const _renamingObject = ref<S3Object | null>(null)
+const _newFileName = ref('')
 
 // Content type changing ref
 const changingContentType = ref(false)
@@ -2134,6 +2223,7 @@ const changingContentType = ref(false)
 // Actions menu ref - tracks which object's actions menu is open
 const showActionsMenu = ref<string | null>(null)
 const showCopySubmenu = ref<string | null>(null)
+const showVersionActionsMenu = ref<string | null>(null)
 
 // Setup swipe back gesture
 useSwipeBack(objectListRef, () => {
@@ -3033,6 +3123,75 @@ function getFileName(key: string): string {
   return parts[parts.length - 1] || key
 }
 
+function formatLockDate(dateString: string): string {
+  return formatDate(dateString)
+}
+
+interface StorageClassInfo {
+  label: string
+  colorClass: string
+  bgClass: string
+  tooltip: string
+}
+
+function getStorageClassInfo(storageClass: string | undefined): StorageClassInfo | null {
+  if (!storageClass || storageClass === 'STANDARD') {
+    return null
+  }
+
+  const classMap: Record<string, StorageClassInfo> = {
+    STANDARD_IA: {
+      label: 'Standard-IA',
+      colorClass: 'text-amber-700 dark:text-amber-400',
+      bgClass: 'bg-amber-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassStandardIA')}`,
+    },
+    ONEZONE_IA: {
+      label: 'OneZone-IA',
+      colorClass: 'text-orange-700 dark:text-orange-400',
+      bgClass: 'bg-orange-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassOneZoneIA')}`,
+    },
+    INTELLIGENT_TIERING: {
+      label: 'Intelligent',
+      colorClass: 'text-green-700 dark:text-green-400',
+      bgClass: 'bg-green-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassIntelligent')}`,
+    },
+    GLACIER_IR: {
+      label: 'Glacier IR',
+      colorClass: 'text-sky-700 dark:text-sky-400',
+      bgClass: 'bg-sky-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassGlacierIR')}`,
+    },
+    GLACIER: {
+      label: 'Glacier',
+      colorClass: 'text-blue-700 dark:text-blue-400',
+      bgClass: 'bg-blue-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassGlacier')}`,
+    },
+    DEEP_ARCHIVE: {
+      label: 'Deep Archive',
+      colorClass: 'text-purple-700 dark:text-purple-400',
+      bgClass: 'bg-purple-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassDeepArchive')}`,
+    },
+    REDUCED_REDUNDANCY: {
+      label: 'Reduced',
+      colorClass: 'text-red-700 dark:text-red-400',
+      bgClass: 'bg-red-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassReduced')}`,
+    },
+  }
+
+  return classMap[storageClass] || {
+    label: storageClass,
+    colorClass: 'text-gray-600 dark:text-gray-400',
+    bgClass: 'bg-gray-500/15',
+    tooltip: `${t('storageClass')}: ${storageClass}`,
+  }
+}
+
 function getFileExtension(filename: string): string {
   const parts = filename.split('.')
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
@@ -3653,7 +3812,7 @@ function handleFileDragEnd(_event: DragEvent, _obj: S3Object) {
   // Users can download via double-click, download button, or context menu.
 }
 
-async function downloadObjectDragDrop(key: string) {
+async function _downloadObjectDragDrop(key: string) {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   const fileName = getFileName(key)
@@ -3697,7 +3856,7 @@ function handleFolderDragEnd(_event: DragEvent, _folder: string) {
   // NOTE: Drag-to-download disabled - see handleFileDragEnd comment.
 }
 
-async function downloadFolderDragDrop(folder: string) {
+async function _downloadFolderDragDrop(folder: string) {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   const folderName = getFolderName(folder)
@@ -3796,9 +3955,10 @@ async function downloadFolderDragDrop(folder: string) {
 
 async function viewObject(obj: S3Object) {
   viewingObject.value = obj
+  viewModalLockStatus.value = null
   showViewModal.value = true
-  // Load versions, tags, and headers for the object
-  await Promise.all([loadViewModalVersions(), loadViewModalTags(), loadViewModalHeaders()])
+  // Load versions, tags, headers, and lock status for the object
+  await Promise.all([loadViewModalVersions(), loadViewModalTags(), loadViewModalHeaders(), loadViewModalLockStatus()])
 }
 
 // Image editor modal handlers - open editor in ObjectBrowser to avoid focus trap conflict
@@ -4037,6 +4197,25 @@ async function loadViewModalHeaders() {
     viewModalHeaders.value = null
   } finally {
     loadingHeaders.value = false
+  }
+}
+
+async function loadViewModalLockStatus() {
+  if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket) return
+
+  loadingLockStatus.value = true
+  try {
+    const status = await objectLock.fetchLockStatus(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      viewingObject.value.key
+    )
+    viewModalLockStatus.value = status
+  } catch (e) {
+    logger.error('Failed to load lock status:', e)
+    viewModalLockStatus.value = null
+  } finally {
+    loadingLockStatus.value = false
   }
 }
 
@@ -4518,18 +4697,75 @@ async function downloadObjectVersion(version: ObjectVersion) {
 
     if (!filePath) return
 
-    // Note: Currently downloads the latest version
-    // TODO: Backend needs to support versionId parameter for specific versions
+    // Download specific version using versionId
     await rustDownloadManager.startDownload(
       appStore.currentProfile.id,
       appStore.currentBucket,
       version.key,
-      filePath
+      filePath,
+      version.version_id
     )
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
       message: `${t('downloadFailed')}: ${e}`,
+      confirmText: t('close'),
+      variant: 'destructive',
+    })
+  }
+}
+
+// Delete a specific version of an object (permanent deletion)
+async function deleteVersionConfirm(version: ObjectVersion) {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  const confirmed = await dialog.confirm({
+    title: t('deleteVersion'),
+    message: t('deleteVersionConfirm').replace('{0}', version.version_id.substring(0, 12)),
+    confirmText: t('delete'),
+    cancelText: t('cancel'),
+    variant: 'destructive',
+  })
+
+  if (!confirmed) return
+
+  try {
+    await deleteObjectVersion(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      version.key,
+      version.version_id
+    )
+
+    toast.success(t('versionDeleted'))
+
+    // Refresh the inline versions list
+    const key = version.key
+    if (inlineVersions.value.has(key)) {
+      const versions = inlineVersions.value.get(key)!.filter(
+        (v) => v.version_id !== version.version_id
+      )
+      if (versions.length <= 1) {
+        // If only one version left, collapse and remove
+        inlineVersions.value.delete(key)
+        expandedVersions.value.delete(key)
+      } else {
+        inlineVersions.value.set(key, versions)
+      }
+      inlineVersions.value = new Map(inlineVersions.value)
+      expandedVersions.value = new Set(expandedVersions.value)
+    }
+
+    // Also refresh view modal versions if open
+    if (viewModalVersions.value.length > 0) {
+      viewModalVersions.value = viewModalVersions.value.filter(
+        (v) => v.version_id !== version.version_id
+      )
+    }
+  } catch (e) {
+    await dialog.confirm({
+      title: t('errorOccurred'),
+      message: `${t('deleteFailed')}: ${e}`,
       confirmText: t('close'),
       variant: 'destructive',
     })

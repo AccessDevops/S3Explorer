@@ -4,9 +4,7 @@
 //! and store them in the SQLite metrics database.
 
 use crate::metrics_storage;
-use crate::models::{
-    categorize_s3_error, RequestCategory, S3MetricsEvent, S3Operation,
-};
+use crate::models::{categorize_s3_error, RequestCategory, S3MetricsEvent, S3Operation};
 use tauri::{AppHandle, Manager};
 
 /// Emit a metrics event to the frontend AND store in SQLite
@@ -150,7 +148,8 @@ impl MetricsContext {
     /// Emit a success event
     pub fn emit_success(self, app: &AppHandle) {
         let duration_ms = self.start_time.elapsed().as_millis() as u64;
-        let mut event = S3MetricsEvent::new(self.operation, self.category).with_duration(duration_ms);
+        let mut event =
+            S3MetricsEvent::new(self.operation, self.category).with_duration(duration_ms);
 
         if let (Some(ref pid), Some(ref pname)) = (&self.profile_id, &self.profile_name) {
             event = event.with_profile(pid, pname);

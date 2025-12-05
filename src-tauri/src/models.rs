@@ -123,6 +123,19 @@ pub struct S3Object {
     pub is_folder: bool,
 }
 
+/// Object Lock status information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectLockStatus {
+    /// Whether the object is locked (either by retention or legal hold)
+    pub is_locked: bool,
+    /// Retention mode: "GOVERNANCE" or "COMPLIANCE"
+    pub retention_mode: Option<String>,
+    /// Retention expiration date (ISO 8601 format)
+    pub retain_until_date: Option<String>,
+    /// Whether legal hold is enabled
+    pub legal_hold: bool,
+}
+
 /// Request to list objects
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -421,6 +434,8 @@ pub enum S3Operation {
     GetObjectTagging,
     PutObjectTagging,
     DeleteObjectTagging,
+    // Object Lock
+    GetObjectLockStatus,
     // Local operations (no S3 API call)
     GeneratePresignedUrl,
 }
@@ -572,7 +587,9 @@ pub fn categorize_s3_error(error_str: &str) -> S3ErrorCategory {
         S3ErrorCategory::ExpiredCredentials
     } else if error_lower.contains("access denied") || error_lower.contains("forbidden") {
         S3ErrorCategory::AccessDenied
-    } else if error_lower.contains("nosuchbucket") || error_lower.contains("bucket") && error_lower.contains("not found") {
+    } else if error_lower.contains("nosuchbucket")
+        || error_lower.contains("bucket") && error_lower.contains("not found")
+    {
         S3ErrorCategory::BucketNotFound
     } else if error_lower.contains("nosuchkey") || error_lower.contains("not found") {
         S3ErrorCategory::ObjectNotFound
@@ -644,11 +661,7 @@ pub struct IndexedObject {
 
 impl IndexedObject {
     /// Créer un IndexedObject à partir d'un S3Object
-    pub fn from_s3_object(
-        s3_obj: &S3Object,
-        profile_id: &str,
-        bucket_name: &str,
-    ) -> Self {
+    pub fn from_s3_object(s3_obj: &S3Object, profile_id: &str, bucket_name: &str) -> Self {
         let key = &s3_obj.key;
         let parent_prefix = Self::extract_parent_prefix(key);
         let basename = Self::extract_basename(key);
@@ -664,7 +677,10 @@ impl IndexedObject {
             size: s3_obj.size,
             last_modified: s3_obj.last_modified.clone(),
             e_tag: s3_obj.e_tag.clone(),
-            storage_class: s3_obj.storage_class.clone().unwrap_or_else(|| "STANDARD".to_string()),
+            storage_class: s3_obj
+                .storage_class
+                .clone()
+                .unwrap_or_else(|| "STANDARD".to_string()),
             owner_id: None,
             owner_display_name: None,
             checksum_algorithm: None,
@@ -718,7 +734,7 @@ impl IndexedObject {
 }
 
 /// Statut d'un préfixe (dossier) dans l'index
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrefixStatus {
     pub id: Option<i64>,
     pub profile_id: String,
@@ -737,26 +753,8 @@ pub struct PrefixStatus {
     pub last_sync_completed_at: Option<i64>,
 }
 
-impl Default for PrefixStatus {
-    fn default() -> Self {
-        Self {
-            id: None,
-            profile_id: String::new(),
-            bucket_name: String::new(),
-            prefix: String::new(),
-            is_complete: false,
-            objects_count: 0,
-            total_size: 0,
-            continuation_token: None,
-            last_indexed_key: None,
-            last_sync_started_at: None,
-            last_sync_completed_at: None,
-        }
-    }
-}
-
 /// Informations sur un bucket (configuration détectée)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BucketInfo {
     pub id: Option<i64>,
     pub profile_id: String,
@@ -776,25 +774,6 @@ pub struct BucketInfo {
     pub initial_index_completed: bool,
 
     pub last_checked_at: Option<i64>,
-}
-
-impl Default for BucketInfo {
-    fn default() -> Self {
-        Self {
-            id: None,
-            profile_id: String::new(),
-            bucket_name: String::new(),
-            versioning_enabled: None,
-            encryption_enabled: None,
-            default_encryption: None,
-            acl: None,
-            acl_cached_at: None,
-            region: None,
-            initial_index_requests: 0,
-            initial_index_completed: false,
-            last_checked_at: None,
-        }
-    }
 }
 
 /// Résultat de l'indexation initiale d'un bucket

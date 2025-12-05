@@ -200,7 +200,7 @@ export function useClipboardUpload() {
 
     // JavaScript/TypeScript detection (basic)
     if (/^(import |export |const |let |var |function |class |async |=>\s*\{)/.test(trimmed) ||
-        /\b(function|const|let|var)\s+\w+\s*[=\(]/.test(trimmed)) {
+        /\b(function|const|let|var)\s+\w+\s*[=(]/.test(trimmed)) {
       return { fileName: 'pasted.js', extension: 'js' }
     }
 

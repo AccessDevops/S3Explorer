@@ -16,7 +16,8 @@ use crate::database::{get_db_manager, DatabaseManager};
 use crate::errors::AppError;
 use crate::models::{
     BucketIndexMetadata, BucketIndexStats, BucketInfo, IndexedObject, IndexingConfig,
-    InitialIndexResult, ListObjectsResponse, PrefixStats, PrefixStatus, S3Object, StorageClassStats,
+    InitialIndexResult, ListObjectsResponse, PrefixStats, PrefixStatus, S3Object,
+    StorageClassStats,
 };
 use crate::s3_adapter::S3Adapter;
 
@@ -224,7 +225,11 @@ impl IndexManager {
 
             // Creer des entrees prefix_status pour chaque dossier decouvert
             for folder_prefix in &root_response.common_prefixes {
-                if self.db.get_prefix_status(bucket_name, folder_prefix)?.is_none() {
+                if self
+                    .db
+                    .get_prefix_status(bucket_name, folder_prefix)?
+                    .is_none()
+                {
                     let folder_status = PrefixStatus {
                         profile_id: self.profile_id.clone(),
                         bucket_name: bucket_name.to_string(),
@@ -306,18 +311,22 @@ impl IndexManager {
         // Cela permet de savoir quels dossiers existent meme si on ne les a pas explores
         for folder_prefix in &response.common_prefixes {
             // Verifier si ce prefix existe deja dans l'index
-            if self.db.get_prefix_status(bucket_name, folder_prefix)?.is_none() {
+            if self
+                .db
+                .get_prefix_status(bucket_name, folder_prefix)?
+                .is_none()
+            {
                 // Creer une entree avec is_complete = false (dossier decouvert mais pas explore)
                 let folder_status = PrefixStatus {
                     profile_id: self.profile_id.clone(),
                     bucket_name: bucket_name.to_string(),
                     prefix: folder_prefix.clone(),
                     is_complete: false,
-                    objects_count: 0,  // Inconnu - sera calcule quand le dossier sera explore
-                    total_size: 0,     // Inconnu - sera calcule quand le dossier sera explore
+                    objects_count: 0, // Inconnu - sera calcule quand le dossier sera explore
+                    total_size: 0,    // Inconnu - sera calcule quand le dossier sera explore
                     continuation_token: None,
                     last_indexed_key: None,
-                    last_sync_started_at: None,  // Jamais synchronise
+                    last_sync_started_at: None, // Jamais synchronise
                     last_sync_completed_at: None,
                     ..Default::default()
                 };
@@ -447,12 +456,15 @@ impl IndexManager {
         prefix: &str,
         current_keys: &[String],
     ) -> Result<i64, AppError> {
-        let deleted = self.db.sync_prefix_objects(bucket_name, prefix, current_keys)?;
+        let deleted = self
+            .db
+            .sync_prefix_objects(bucket_name, prefix, current_keys)?;
 
         // Si des objets ont ete supprimes, marquer les ancetres comme incomplets
         // et nettoyer les prefix_status orphelins
         if deleted > 0 {
-            self.db.mark_prefix_and_ancestors_incomplete(bucket_name, prefix)?;
+            self.db
+                .mark_prefix_and_ancestors_incomplete(bucket_name, prefix)?;
 
             // Nettoyer les prefix_status qui n'ont plus d'objets
             // (cas ou un dossier entier a ete supprime sur S3)
@@ -704,7 +716,9 @@ mod tests {
         assert_eq!(stats.total_size, 1024);
 
         // Supprimer l'objet
-        manager.remove_object("test-bucket", "test/file.txt").unwrap();
+        manager
+            .remove_object("test-bucket", "test/file.txt")
+            .unwrap();
 
         // Verifier que les stats sont a 0
         let stats = manager.get_prefix_stats("test-bucket", "test/").unwrap();
@@ -767,11 +781,15 @@ mod tests {
         }
 
         // Verifier la taille de folder1
-        let (size1, _) = manager.calculate_folder_size("size-bucket", "folder1/").unwrap();
+        let (size1, _) = manager
+            .calculate_folder_size("size-bucket", "folder1/")
+            .unwrap();
         assert_eq!(size1, 1000); // 5 * 200
 
         // Verifier la taille de folder2
-        let (size2, _) = manager.calculate_folder_size("size-bucket", "folder2/").unwrap();
+        let (size2, _) = manager
+            .calculate_folder_size("size-bucket", "folder2/")
+            .unwrap();
         assert_eq!(size2, 900); // 3 * 300
     }
 }

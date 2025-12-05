@@ -50,12 +50,42 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
+      "category": "DeveloperTool",
+      "shortDescription": "S3-compatible object storage browser",
+      "longDescription": "A cross-platform desktop application for managing S3-compatible object storage services including AWS S3, MinIO, Backblaze, and more.",
       "macOS": {
         "frameworks": [],
         "minimumSystemVersion": "10.13",
         "exceptionDomain": "",
         "signingIdentity": null,
         "entitlements": null
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": "http://timestamp.digicert.com",
+        "wix": null,
+        "nsis": {
+          "installerIcon": "icons/icon.ico",
+          "headerImage": null,
+          "sidebarImage": null,
+          "installMode": "currentUser",
+          "languages": ["English", "French"],
+          "displayLanguageSelector": true
+        }
+      },
+      "deb": {
+        "depends": ["libwebkit2gtk-4.0-37", "libgtk-3-0", "libayatana-appindicator3-1"],
+        "section": "utils",
+        "priority": "optional"
+      },
+      "rpm": {
+        "release": "1",
+        "epoch": 0,
+        "depends": ["webkit2gtk3", "gtk3", "libappindicator-gtk3"]
       }
     },
     "security": {

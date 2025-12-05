@@ -383,7 +383,10 @@ pub async fn list_objects(
                     if let Err(e) =
                         index_mgr.sync_prefix_objects(&bucket, prefix_str, &current_keys)
                     {
-                        eprintln!("Warning: Failed to sync index for prefix '{}': {}", prefix_str, e);
+                        eprintln!(
+                            "Warning: Failed to sync index for prefix '{}': {}",
+                            prefix_str, e
+                        );
                     }
                 }
             }
@@ -464,7 +467,9 @@ pub async fn put_object(
         .await
         .map_err(|e| e.to_string())?;
 
-    let result = adapter.put_object(&bucket, &key, content, content_type.clone()).await;
+    let result = adapter
+        .put_object(&bucket, &key, content, content_type.clone())
+        .await;
     ctx.emit_result(&app, &result);
 
     // Add object to index after successful upload
@@ -517,6 +522,39 @@ pub async fn delete_object(
             let _ = index_mgr.remove_object(&bucket, &key);
         }
     }
+
+    result.map_err(|e| e.to_string())
+}
+
+/// Delete a specific version of an object
+/// This is a PERMANENT deletion - the version cannot be recovered
+#[tauri::command]
+pub async fn delete_object_version(
+    app: AppHandle,
+    profile_id: String,
+    bucket: String,
+    key: String,
+    version_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let ctx = MetricsContext::new(S3Operation::DeleteObject, RequestCategory::DELETE)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let result = adapter
+        .delete_object_version(&bucket, &key, &version_id)
+        .await;
+    ctx.emit_result(&app, &result);
 
     result.map_err(|e| e.to_string())
 }
@@ -602,7 +640,9 @@ pub async fn change_content_type(
         .await
         .map_err(|e| e.to_string())?;
 
-    let result = adapter.change_content_type(&bucket, &key, &new_content_type).await;
+    let result = adapter
+        .change_content_type(&bucket, &key, &new_content_type)
+        .await;
     ctx.emit_result(&app, &result);
 
     result.map_err(|e| e.to_string())
@@ -618,7 +658,8 @@ pub async fn create_folder(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validation::validate_bucket_name(&bucket).map_err(|e| e.to_string())?;
-    let validated_path = validation::validate_folder_path(&folder_path).map_err(|e| e.to_string())?;
+    let validated_path =
+        validation::validate_folder_path(&folder_path).map_err(|e| e.to_string())?;
 
     let profile = {
         let store = state.profiles.lock().map_err(|e| e.to_string())?;
@@ -774,7 +815,9 @@ pub async fn calculate_folder_size(
     }
 
     // Return (size, is_estimate=false) since we got complete data from S3
-    result.map(|(size, _)| (size, false)).map_err(|e| e.to_string())
+    result
+        .map(|(size, _)| (size, false))
+        .map_err(|e| e.to_string())
 }
 
 /// Delete a folder and all its contents
@@ -820,12 +863,13 @@ pub async fn delete_folder(
             // Emit metrics for DeleteObjects calls
             let objects_per_delete = (*deleted_count as u32) / (*delete_request_count).max(1);
             for _ in 0..*delete_request_count {
-                let event = S3MetricsEvent::new(S3Operation::DeleteObjects, RequestCategory::DELETE)
-                    .with_duration(avg_duration)
-                    .with_profile(&profile.id, &profile.name)
-                    .with_bucket(&bucket)
-                    .with_object_key(&prefix)
-                    .with_objects_affected(objects_per_delete);
+                let event =
+                    S3MetricsEvent::new(S3Operation::DeleteObjects, RequestCategory::DELETE)
+                        .with_duration(avg_duration)
+                        .with_profile(&profile.id, &profile.name)
+                        .with_bucket(&bucket)
+                        .with_object_key(&prefix)
+                        .with_objects_affected(objects_per_delete);
                 crate::metrics::emit_metrics(&app, event);
             }
         }
@@ -1175,10 +1219,11 @@ async fn perform_upload(
         let total_parts = file_size.div_ceil(PART_SIZE) as i32;
 
         // Start multipart upload with metrics
-        let init_ctx = MetricsContext::new(S3Operation::CreateMultipartUpload, RequestCategory::PUT)
-            .with_profile(&profile.id, &profile.name)
-            .with_bucket(&bucket)
-            .with_object_key(&key);
+        let init_ctx =
+            MetricsContext::new(S3Operation::CreateMultipartUpload, RequestCategory::PUT)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&key);
 
         let init_result = adapter
             .multipart_upload_start(&bucket, &key, content_type)
@@ -1196,8 +1241,7 @@ async fn perform_upload(
 
         // OPTIMIZATION: Open file ONCE before the loop (instead of per-part)
         // This eliminates ~200 syscalls (open/close) for a 1GB file
-        let mut file =
-            File::open(&file_path).map_err(|e| format!("Failed to open file: {}", e))?;
+        let mut file = File::open(&file_path).map_err(|e| format!("Failed to open file: {}", e))?;
 
         // OPTIMIZATION: Allocate buffer ONCE (instead of per-part)
         // This eliminates ~100 allocations/deallocations of 10MB each
@@ -1207,10 +1251,11 @@ async fn perform_upload(
             // Check for cancellation before each part
             if cancel_rx.try_recv().is_ok() {
                 // Abort the multipart upload with metrics
-                let abort_ctx = MetricsContext::new(S3Operation::AbortMultipartUpload, RequestCategory::PUT)
-                    .with_profile(&profile.id, &profile.name)
-                    .with_bucket(&bucket)
-                    .with_object_key(&key);
+                let abort_ctx =
+                    MetricsContext::new(S3Operation::AbortMultipartUpload, RequestCategory::PUT)
+                        .with_profile(&profile.id, &profile.name)
+                        .with_bucket(&bucket)
+                        .with_object_key(&key);
 
                 let abort_result = adapter
                     .multipart_upload_abort(&bucket, &key, &s3_upload_id)
@@ -1278,10 +1323,11 @@ async fn perform_upload(
         // File handle and buffer are automatically dropped here
 
         // Complete multipart upload with metrics
-        let complete_ctx = MetricsContext::new(S3Operation::CompleteMultipartUpload, RequestCategory::PUT)
-            .with_profile(&profile.id, &profile.name)
-            .with_bucket(&bucket)
-            .with_object_key(&key);
+        let complete_ctx =
+            MetricsContext::new(S3Operation::CompleteMultipartUpload, RequestCategory::PUT)
+                .with_profile(&profile.id, &profile.name)
+                .with_bucket(&bucket)
+                .with_object_key(&key);
 
         let complete_result = adapter
             .multipart_upload_complete(&bucket, &key, &s3_upload_id, completed_parts)
@@ -1471,6 +1517,35 @@ pub async fn update_object_metadata(
     result.map_err(|e| e.to_string())
 }
 
+/// Get object lock status (retention and legal hold)
+#[tauri::command]
+pub async fn get_object_lock_status(
+    app: AppHandle,
+    profile_id: String,
+    bucket: String,
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<ObjectLockStatus, String> {
+    let profile = {
+        let store = state.profiles.lock().map_err(|e| e.to_string())?;
+        store.get(&profile_id).map_err(|e| e.to_string())?
+    };
+
+    let ctx = MetricsContext::new(S3Operation::GetObjectLockStatus, RequestCategory::GET)
+        .with_profile(&profile.id, &profile.name)
+        .with_bucket(&bucket)
+        .with_object_key(&key);
+
+    let adapter = S3Adapter::from_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let result = adapter.get_object_lock_status(&bucket, &key).await;
+    ctx.emit_result(&app, &result);
+
+    result.map_err(|e| e.to_string())
+}
+
 // ============================================================================
 // Index Management Commands
 // ============================================================================
@@ -1502,7 +1577,7 @@ pub async fn start_initial_index(
     };
 
     // Use batch_size from parameter or default to 1000 (S3 max)
-    let effective_batch_size = batch_size.unwrap_or(1000).min(1000).max(1);
+    let effective_batch_size = batch_size.unwrap_or(1000).clamp(1, 1000);
 
     // Create cancellation channel
     let (cancel_tx, cancel_rx) = broadcast::channel::<()>(1);
@@ -1607,7 +1682,12 @@ pub async fn start_initial_index(
     match &result {
         Ok(index_result) => {
             // Determine status based on result
-            let status = if index_result.error.as_ref().map(|e| e.contains("Cancelled")).unwrap_or(false) {
+            let status = if index_result
+                .error
+                .as_ref()
+                .map(|e| e.contains("Cancelled"))
+                .unwrap_or(false)
+            {
                 IndexStatus::Cancelled
             } else if index_result.is_complete {
                 IndexStatus::Completed
@@ -1913,12 +1993,14 @@ fn emit_download_progress(
 
 /// Download a file from S3 directly to disk with streaming (no memory buffering)
 /// Returns a download_id that can be used to track progress and cancel the download
+/// If version_id is provided, downloads that specific version of the object
 #[tauri::command]
 pub async fn download_file(
     app: AppHandle,
     profile_id: String,
     bucket: String,
     key: String,
+    version_id: Option<String>,
     dest_path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
@@ -1943,7 +2025,10 @@ pub async fn download_file(
         .with_profile(&profile.id, &profile.name)
         .with_bucket(&bucket)
         .with_object_key(&key);
-    let file_size = match adapter.get_object_size(&bucket, &key).await {
+    let file_size = match adapter
+        .get_object_size(&bucket, &key, version_id.as_deref())
+        .await
+    {
         Ok(size) => {
             head_ctx.emit_success(&app);
             size
@@ -1955,7 +2040,7 @@ pub async fn download_file(
     };
 
     // Extract file name from key
-    let file_name = key.split('/').last().unwrap_or(&key).to_string();
+    let file_name = key.split('/').next_back().unwrap_or(&key).to_string();
 
     // Create cancellation channel
     let (cancel_tx, cancel_rx) = broadcast::channel::<()>(1);
@@ -1977,6 +2062,7 @@ pub async fn download_file(
     let file_name_clone = file_name.clone();
     let app_clone = app.clone();
     let state_downloads = state.active_downloads.clone();
+    let version_id_clone = version_id.clone();
     // Clone for metrics
     let profile_id_for_metrics = profile.id.clone();
     let profile_name_for_metrics = profile.name.clone();
@@ -2001,7 +2087,10 @@ pub async fn download_file(
         );
 
         // Get S3 object stream
-        let (body_stream, actual_size) = match adapter.get_object_stream(&bucket, &key).await {
+        let (body_stream, actual_size) = match adapter
+            .get_object_stream(&bucket, &key, version_id_clone.as_deref())
+            .await
+        {
             Ok(result) => result,
             Err(e) => {
                 emit_download_progress(
@@ -2023,7 +2112,11 @@ pub async fn download_file(
         };
 
         // Use actual size from GET response if HEAD failed
-        let file_size = if file_size > 0 { file_size } else { actual_size };
+        let file_size = if file_size > 0 {
+            file_size
+        } else {
+            actual_size
+        };
 
         // Create destination file
         let mut file = match tokio::fs::File::create(&dest_path).await {
@@ -2378,13 +2471,74 @@ pub async fn get_metrics_history(
 
 /// Get hourly breakdown for today (or specified date)
 #[tauri::command]
-pub async fn get_metrics_hourly(date: Option<String>) -> Result<Vec<metrics_storage::HourlyStats>, String> {
+pub async fn get_metrics_hourly(
+    date: Option<String>,
+) -> Result<Vec<metrics_storage::HourlyStats>, String> {
     spawn_blocking(move || {
         let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
-        let target_date = date.unwrap_or_else(|| {
-            chrono::Utc::now().format("%Y-%m-%d").to_string()
-        });
+        let target_date = date.unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
         metrics_storage::get_hourly_stats(&db, &target_date).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Get hourly breakdown aggregated over a period
+#[tauri::command]
+pub async fn get_metrics_hourly_period(
+    days: u32,
+) -> Result<Vec<metrics_storage::HourlyStats>, String> {
+    spawn_blocking(move || {
+        let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
+        metrics_storage::get_hourly_stats_period(&db, days).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Get daily distribution for a period (for 7-day chart view)
+#[tauri::command]
+pub async fn get_metrics_daily_distribution(
+    days: u32,
+) -> Result<Vec<metrics_storage::DailyDistribution>, String> {
+    spawn_blocking(move || {
+        let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
+        metrics_storage::get_daily_distribution(&db, days).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Get weekly distribution for a period (for 30-day chart view)
+#[tauri::command]
+pub async fn get_metrics_weekly_distribution(
+    days: u32,
+) -> Result<Vec<metrics_storage::WeeklyDistribution>, String> {
+    spawn_blocking(move || {
+        let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
+        metrics_storage::get_weekly_distribution(&db, days).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Get aggregated stats for a period
+#[tauri::command]
+pub async fn get_metrics_period(
+    days: u32,
+    get_per_thousand: f64,
+    put_per_thousand: f64,
+    list_per_thousand: f64,
+) -> Result<metrics_storage::DailyStats, String> {
+    spawn_blocking(move || {
+        let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
+        let pricing = metrics_storage::S3Pricing {
+            get_per_thousand,
+            put_per_thousand,
+            list_per_thousand,
+            delete_per_thousand: 0.0,
+        };
+        metrics_storage::get_period_stats(&db, days, &pricing).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2392,7 +2546,9 @@ pub async fn get_metrics_hourly(date: Option<String>) -> Result<Vec<metrics_stor
 
 /// Get metrics grouped by operation type
 #[tauri::command]
-pub async fn get_metrics_by_operation(days: u32) -> Result<Vec<metrics_storage::OperationStats>, String> {
+pub async fn get_metrics_by_operation(
+    days: u32,
+) -> Result<Vec<metrics_storage::OperationStats>, String> {
     spawn_blocking(move || {
         let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
         metrics_storage::get_operation_stats(&db, days).map_err(|e| e.to_string())
@@ -2467,8 +2623,8 @@ pub async fn get_metrics_storage_info() -> Result<metrics_storage::StorageInfo, 
 pub async fn purge_metrics(retention_days: u32) -> Result<u64, String> {
     spawn_blocking(move || {
         let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
-        let requests_deleted = metrics_storage::purge_old_data(&db, retention_days)
-            .map_err(|e| e.to_string())?;
+        let requests_deleted =
+            metrics_storage::purge_old_data(&db, retention_days).map_err(|e| e.to_string())?;
         let _ = metrics_storage::purge_cache_events(&db, retention_days);
         Ok(requests_deleted)
     })
@@ -2489,9 +2645,7 @@ pub async fn clear_metrics() -> Result<(), String> {
 
 /// Record a cache event
 #[tauri::command]
-pub async fn record_cache_event(
-    event: metrics_storage::CacheEvent,
-) -> Result<(), String> {
+pub async fn record_cache_event(event: metrics_storage::CacheEvent) -> Result<(), String> {
     spawn_blocking(move || {
         let db = metrics_storage::get_metrics_db().map_err(|e| e.to_string())?;
         metrics_storage::record_cache_event(&db, &event).map_err(|e| e.to_string())
@@ -2567,7 +2721,7 @@ pub async fn upload_from_bytes(
     // Use UUID to ensure unique filename (upload_file spawns a background task
     // that reads the file asynchronously, so we can't delete it immediately)
     let temp_dir = std::env::temp_dir();
-    let file_name = key.split('/').last().unwrap_or("clipboard_data");
+    let file_name = key.split('/').next_back().unwrap_or("clipboard_data");
     let unique_id = uuid::Uuid::new_v4();
     let temp_path = temp_dir.join(format!("s3explorer_clipboard_{}_{}", unique_id, file_name));
 
@@ -2605,7 +2759,15 @@ pub async fn read_clipboard_files() -> Result<Vec<String>, String> {
         {
             read_clipboard_files_macos()
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        {
+            read_clipboard_files_windows()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            read_clipboard_files_linux()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             read_clipboard_files_fallback()
         }
@@ -2618,7 +2780,7 @@ pub async fn read_clipboard_files() -> Result<Vec<String>, String> {
 #[cfg(target_os = "macos")]
 fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
     use cocoa::base::{id, nil};
-    use cocoa::foundation::{NSArray, NSString};
+    use cocoa::foundation::NSString;
     use objc::{class, msg_send, sel, sel_impl};
     use std::ffi::CStr;
 
@@ -2651,7 +2813,10 @@ fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
         // Try NSFilenamesPboardType - this is what Finder uses when you Copy files
         let filenames_type: id = NSString::alloc(nil).init_str("NSFilenamesPboardType");
         let filenames: id = msg_send![pasteboard, propertyListForType: filenames_type];
-        println!("[clipboard] NSFilenamesPboardType filenames: {:?}", filenames != nil);
+        println!(
+            "[clipboard] NSFilenamesPboardType filenames: {:?}",
+            filenames != nil
+        );
 
         if filenames != nil {
             let count: usize = msg_send![filenames, count];
@@ -2665,7 +2830,11 @@ fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
                         if !c_str.is_null() {
                             if let Ok(s) = CStr::from_ptr(c_str).to_str() {
                                 let path_str = s.to_string();
-                                println!("[clipboard] Found path: {} (exists: {})", path_str, std::path::Path::new(&path_str).exists());
+                                println!(
+                                    "[clipboard] Found path: {} (exists: {})",
+                                    path_str,
+                                    std::path::Path::new(&path_str).exists()
+                                );
                                 if std::path::Path::new(&path_str).exists() {
                                     paths.push(path_str);
                                 }
@@ -2674,7 +2843,10 @@ fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
                     }
                 }
                 if !paths.is_empty() {
-                    println!("[clipboard] Returning {} paths from NSFilenamesPboardType", paths.len());
+                    println!(
+                        "[clipboard] Returning {} paths from NSFilenamesPboardType",
+                        paths.len()
+                    );
                     return Ok(paths);
                 }
             }
@@ -2694,7 +2866,11 @@ fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
                     if let Some(path) = url_str.strip_prefix("file://") {
                         // URL decode the path
                         let decoded = urlencoding_decode(path);
-                        println!("[clipboard] Decoded path: {} (exists: {})", decoded, std::path::Path::new(&decoded).exists());
+                        println!(
+                            "[clipboard] Decoded path: {} (exists: {})",
+                            decoded,
+                            std::path::Path::new(&decoded).exists()
+                        );
                         if std::path::Path::new(&decoded).exists() {
                             return Ok(vec![decoded]);
                         }
@@ -2708,12 +2884,115 @@ fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
     }
 }
 
-/// Fallback implementation for non-macOS platforms
-#[cfg(not(target_os = "macos"))]
+/// Windows-specific implementation using CF_HDROP format
+#[cfg(target_os = "windows")]
+fn read_clipboard_files_windows() -> Result<Vec<String>, String> {
+    use clipboard_win::{formats, get_clipboard};
+
+    // Try to get file list from clipboard (CF_HDROP format)
+    match get_clipboard::<Vec<String>, _>(formats::FileList) {
+        Ok(files) => {
+            // Filter to only existing files
+            let valid_files: Vec<String> = files
+                .into_iter()
+                .filter(|path| std::path::Path::new(path).exists())
+                .collect();
+
+            println!("[clipboard-win] Found {} files", valid_files.len());
+            Ok(valid_files)
+        }
+        Err(e) => {
+            println!("[clipboard-win] No files in clipboard: {}", e);
+            // Fallback to text parsing
+            read_clipboard_files_fallback()
+        }
+    }
+}
+
+/// Linux-specific implementation using text/uri-list format
+#[cfg(target_os = "linux")]
+fn read_clipboard_files_linux() -> Result<Vec<String>, String> {
+    use std::process::Command;
+
+    // Try xclip first (X11)
+    let xclip_result = Command::new("xclip")
+        .args(["-selection", "clipboard", "-t", "text/uri-list", "-o"])
+        .output();
+
+    if let Ok(output) = xclip_result {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            let paths = parse_uri_list(&text);
+            if !paths.is_empty() {
+                println!("[clipboard-linux] Found {} files via xclip", paths.len());
+                return Ok(paths);
+            }
+        }
+    }
+
+    // Try xsel as fallback (X11)
+    let xsel_result = Command::new("xsel")
+        .args(["--clipboard", "--output"])
+        .output();
+
+    if let Ok(output) = xsel_result {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            let paths = parse_uri_list(&text);
+            if !paths.is_empty() {
+                println!("[clipboard-linux] Found {} files via xsel", paths.len());
+                return Ok(paths);
+            }
+        }
+    }
+
+    // Try wl-paste for Wayland
+    let wl_result = Command::new("wl-paste")
+        .args(["--type", "text/uri-list"])
+        .output();
+
+    if let Ok(output) = wl_result {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            let paths = parse_uri_list(&text);
+            if !paths.is_empty() {
+                println!("[clipboard-linux] Found {} files via wl-paste", paths.len());
+                return Ok(paths);
+            }
+        }
+    }
+
+    // Fallback to arboard text
+    read_clipboard_files_fallback()
+}
+
+/// Parse text/uri-list format into file paths
+#[cfg(target_os = "linux")]
+fn parse_uri_list(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|line| !line.starts_with('#')) // Skip comments
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.starts_with("file://") {
+                // Remove file:// prefix and decode URL
+                let path = line.strip_prefix("file://").unwrap();
+                let decoded = urlencoding_decode(path);
+                if std::path::Path::new(&decoded).exists() {
+                    return Some(decoded);
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+/// Fallback implementation using arboard text
+#[cfg(any(target_os = "linux", target_os = "windows", not(any(target_os = "macos", target_os = "windows", target_os = "linux"))))]
 fn read_clipboard_files_fallback() -> Result<Vec<String>, String> {
     use arboard::Clipboard;
 
-    let mut clipboard = Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+    let mut clipboard =
+        Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
 
     // Try to get file list from clipboard (platform-specific)
     match clipboard.get_text() {

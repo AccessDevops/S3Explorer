@@ -70,8 +70,8 @@ impl ProfileStore {
         store.crypto = Some(Crypto::new()?);
 
         // Check if migration is needed
-        let needs_migration = store.version < STORAGE_VERSION
-            || store.profiles.values().any(|p| p.needs_migration());
+        let needs_migration =
+            store.version < STORAGE_VERSION || store.profiles.values().any(|p| p.needs_migration());
 
         if needs_migration {
             store.migrate()?;

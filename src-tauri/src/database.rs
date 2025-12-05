@@ -99,16 +99,12 @@ impl DatabaseManager {
         }
 
         // Obtenir la taille du fichier principal
-        let main_size = std::fs::metadata(&db_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let main_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
         // Ajouter la taille du fichier WAL si present
         let wal_path = db_path.with_extension("db-wal");
         let wal_size = if wal_path.exists() {
-            std::fs::metadata(&wal_path)
-                .map(|m| m.len())
-                .unwrap_or(0)
+            std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0)
         } else {
             0
         };
@@ -116,9 +112,7 @@ impl DatabaseManager {
         // Ajouter la taille du fichier SHM si present
         let shm_path = db_path.with_extension("db-shm");
         let shm_size = if shm_path.exists() {
-            std::fs::metadata(&shm_path)
-                .map(|m| m.len())
-                .unwrap_or(0)
+            std::fs::metadata(&shm_path).map(|m| m.len()).unwrap_or(0)
         } else {
             0
         };
@@ -162,11 +156,10 @@ impl DatabaseManager {
 
     /// Obtenir la version actuelle du schema
     fn get_schema_version(&self, conn: &Connection) -> Result<i32, AppError> {
-        let result: Result<i32, _> = conn.query_row(
-            "SELECT version FROM schema_version LIMIT 1",
-            [],
-            |row| row.get(0),
-        );
+        let result: Result<i32, _> =
+            conn.query_row("SELECT version FROM schema_version LIMIT 1", [], |row| {
+                row.get(0)
+            });
 
         match result {
             Ok(version) => Ok(version),
@@ -335,7 +328,11 @@ impl DatabaseManager {
     }
 
     /// Supprimer tous les objets d'un prefixe (recursif)
-    pub fn delete_objects_by_prefix(&self, bucket_name: &str, prefix: &str) -> Result<i64, AppError> {
+    pub fn delete_objects_by_prefix(
+        &self,
+        bucket_name: &str,
+        prefix: &str,
+    ) -> Result<i64, AppError> {
         let conn = self.get_connection()?;
 
         let deleted = conn.execute(
@@ -682,7 +679,8 @@ impl DatabaseManager {
         );
 
         // Construire les paramètres: [profile_id, bucket_name, prefix1, prefix2, ...]
-        let mut params_vec: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(2 + prefixes_to_mark.len());
+        let mut params_vec: Vec<&dyn rusqlite::ToSql> =
+            Vec::with_capacity(2 + prefixes_to_mark.len());
         params_vec.push(&self.profile_id);
         params_vec.push(&bucket_name);
         for pfx in &prefixes_to_mark {
@@ -1389,11 +1387,14 @@ impl DatabaseManager {
     // ========================================================================
 
     /// Purger les objets obsoletes (plus vieux que stale_hours)
-    pub fn purge_stale_objects(&self, bucket_name: &str, stale_hours: u32) -> Result<i64, AppError> {
+    pub fn purge_stale_objects(
+        &self,
+        bucket_name: &str,
+        stale_hours: u32,
+    ) -> Result<i64, AppError> {
         let conn = self.get_connection()?;
 
-        let cutoff =
-            chrono::Utc::now().timestamp_millis() - (stale_hours as i64 * 60 * 60 * 1000);
+        let cutoff = chrono::Utc::now().timestamp_millis() - (stale_hours as i64 * 60 * 60 * 1000);
 
         let deleted = conn.execute(
             r#"

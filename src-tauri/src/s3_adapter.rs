@@ -4,8 +4,8 @@ use crate::models::{
     BucketEncryptionRule, BucketLifecycleResponse, BucketPolicyResponse, BucketVersioningResponse,
     CompletedPart, CorsRule, DeleteObjectError, DeleteObjectsResponse, GetObjectMetadataResponse,
     GetObjectResponse, LifecycleRule, LifecycleTransition, ListObjectVersionsResponse,
-    ListObjectsResponse, MultipartUploadInitResponse, MultipartUploadPartResponse, ObjectTag,
-    ObjectVersion, Profile, S3Object, TestConnectionResponse,
+    ListObjectsResponse, MultipartUploadInitResponse, MultipartUploadPartResponse,
+    ObjectLockStatus, ObjectTag, ObjectVersion, Profile, S3Object, TestConnectionResponse,
 };
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::BehaviorVersion;
@@ -217,9 +217,15 @@ impl S3Adapter {
 
                 // Check for common S3 error codes
                 if error_str.contains("BucketNotEmpty") {
-                    AppError::S3Error("BucketNotEmpty: The bucket is not empty. Delete all objects first.".to_string())
+                    AppError::S3Error(
+                        "BucketNotEmpty: The bucket is not empty. Delete all objects first."
+                            .to_string(),
+                    )
                 } else if error_str.contains("AccessDenied") {
-                    AppError::S3Error("AccessDenied: You don't have permission to delete this bucket.".to_string())
+                    AppError::S3Error(
+                        "AccessDenied: You don't have permission to delete this bucket."
+                            .to_string(),
+                    )
                 } else if error_str.contains("NoSuchBucket") {
                     AppError::S3Error("NoSuchBucket: The bucket does not exist.".to_string())
                 } else {
@@ -239,12 +245,7 @@ impl S3Adapter {
         // Try HEAD bucket - if we can do this, we have at least read access
         // For most S3-compatible systems, if you can list/access the bucket,
         // and you're an admin user, you can delete it
-        let head_result = self
-            .client
-            .head_bucket()
-            .bucket(bucket_name)
-            .send()
-            .await;
+        let head_result = self.client.head_bucket().bucket(bucket_name).send().await;
 
         match head_result {
             Ok(_) => true, // Bucket exists and we can access it
@@ -431,16 +432,20 @@ impl S3Adapter {
 
     /// Get an object's body as a stream (for streaming downloads without buffering)
     /// Returns the ByteStream and file size
+    /// If version_id is provided, downloads that specific version
     pub async fn get_object_stream(
         &self,
         bucket: &str,
         key: &str,
+        version_id: Option<&str>,
     ) -> Result<(ByteStream, u64), AppError> {
-        let output = self
-            .client
-            .get_object()
-            .bucket(bucket)
-            .key(key)
+        let mut request = self.client.get_object().bucket(bucket).key(key);
+
+        if let Some(vid) = version_id {
+            request = request.version_id(vid);
+        }
+
+        let output = request
             .send()
             .await
             .map_err(|e| AppError::S3Error(format!("Failed to get object: {}", e)))?;
@@ -450,12 +455,20 @@ impl S3Adapter {
     }
 
     /// Get object size without downloading content (uses HEAD request)
-    pub async fn get_object_size(&self, bucket: &str, key: &str) -> Result<u64, AppError> {
-        let output = self
-            .client
-            .head_object()
-            .bucket(bucket)
-            .key(key)
+    /// If version_id is provided, gets size of that specific version
+    pub async fn get_object_size(
+        &self,
+        bucket: &str,
+        key: &str,
+        version_id: Option<&str>,
+    ) -> Result<u64, AppError> {
+        let mut request = self.client.head_object().bucket(bucket).key(key);
+
+        if let Some(vid) = version_id {
+            request = request.version_id(vid);
+        }
+
+        let output = request
             .send()
             .await
             .map_err(|e| AppError::S3Error(format!("Failed to head object: {}", e)))?;
@@ -499,6 +512,26 @@ impl S3Adapter {
             .send()
             .await
             .map_err(|e| AppError::S3Error(format!("Failed to delete object: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Delete a specific version of an object
+    /// This is a PERMANENT deletion - the version cannot be recovered
+    pub async fn delete_object_version(
+        &self,
+        bucket: &str,
+        key: &str,
+        version_id: &str,
+    ) -> Result<(), AppError> {
+        self.client
+            .delete_object()
+            .bucket(bucket)
+            .key(key)
+            .version_id(version_id)
+            .send()
+            .await
+            .map_err(|e| AppError::S3Error(format!("Failed to delete object version: {}", e)))?;
 
         Ok(())
     }
@@ -670,7 +703,11 @@ impl S3Adapter {
     /// This is ~99% more efficient than deleting objects one by one
     /// S3 DeleteObjects supports up to 1000 objects per request
     /// Returns (deleted_count, list_request_count, delete_request_count)
-    pub async fn delete_folder(&self, bucket: &str, prefix: &str) -> Result<(i64, u32, u32), AppError> {
+    pub async fn delete_folder(
+        &self,
+        bucket: &str,
+        prefix: &str,
+    ) -> Result<(i64, u32, u32), AppError> {
         let folder_prefix = if prefix.ends_with('/') {
             prefix.to_string()
         } else {
@@ -729,9 +766,7 @@ impl S3Adapter {
 
         // Also delete the folder marker itself (if it exists)
         // Use batch delete for consistency (single item batch is fine)
-        let _ = self
-            .delete_objects_batch(bucket, vec![folder_prefix])
-            .await;
+        let _ = self.delete_objects_batch(bucket, vec![folder_prefix]).await;
         delete_request_count += 1;
 
         // Return total deleted count (errors are logged but don't fail the operation)
@@ -1195,16 +1230,18 @@ impl S3Adapter {
                             .collect();
 
                         // Extract filter prefix (simplified - could be more complex)
-                        let filter_prefix = rule.filter().and_then(|f| {
-                            f.prefix().map(|p| p.to_string())
-                        });
+                        let filter_prefix = rule
+                            .filter()
+                            .and_then(|f| f.prefix().map(|p| p.to_string()));
 
                         LifecycleRule {
                             id: rule.id().map(|s| s.to_string()),
                             status: rule.status().as_str().to_string(),
                             filter_prefix,
                             expiration_days: rule.expiration().and_then(|e| e.days()),
-                            expiration_date: rule.expiration().and_then(|e| e.date().map(|d| d.to_string())),
+                            expiration_date: rule
+                                .expiration()
+                                .and_then(|e| e.date().map(|d| d.to_string())),
                             transitions,
                             noncurrent_version_expiration_days: rule
                                 .noncurrent_version_expiration()
@@ -1280,10 +1317,7 @@ impl S3Adapter {
                             .filter_map(|rule| {
                                 rule.apply_server_side_encryption_by_default().map(|sse| {
                                     BucketEncryptionRule {
-                                        sse_algorithm: sse
-                                            .sse_algorithm()
-                                            .as_str()
-                                            .to_string(),
+                                        sse_algorithm: sse.sse_algorithm().as_str().to_string(),
                                         kms_master_key_id: sse
                                             .kms_master_key_id()
                                             .map(|k| k.to_string()),
@@ -1319,10 +1353,7 @@ impl S3Adapter {
     }
 
     /// Get all bucket configuration at once (parallel calls)
-    pub async fn get_bucket_configuration(
-        &self,
-        bucket_name: &str,
-    ) -> BucketConfigurationResponse {
+    pub async fn get_bucket_configuration(&self, bucket_name: &str) -> BucketConfigurationResponse {
         // Execute all configuration fetches in parallel
         let (policy, acl_result, cors, lifecycle, versioning, encryption) = tokio::join!(
             self.get_bucket_policy(bucket_name),
@@ -1344,5 +1375,92 @@ impl S3Adapter {
             versioning,
             encryption,
         }
+    }
+
+    // ========================================================================
+    // Object Lock Methods
+    // ========================================================================
+
+    /// Get object lock status (retention + legal hold)
+    /// Returns ObjectLockStatus with is_locked=false if Object Lock is not configured
+    /// or if the bucket doesn't support Object Lock
+    pub async fn get_object_lock_status(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Result<ObjectLockStatus, AppError> {
+        // Fetch retention and legal hold in parallel
+        let (retention_result, legal_hold_result) = tokio::join!(
+            self.client
+                .get_object_retention()
+                .bucket(bucket)
+                .key(key)
+                .send(),
+            self.client
+                .get_object_legal_hold()
+                .bucket(bucket)
+                .key(key)
+                .send()
+        );
+
+        // Parse retention result
+        let (retention_mode, retain_until_date) = match retention_result {
+            Ok(output) => {
+                let retention = output.retention();
+                let mode = retention.and_then(|r| r.mode().map(|m| m.as_str().to_string()));
+                let until_date =
+                    retention.and_then(|r| r.retain_until_date().map(|d| d.to_string()));
+                (mode, until_date)
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                // These errors mean no retention is set - not an error condition
+                if err_str.contains("ObjectLockConfigurationNotFoundError")
+                    || err_str.contains("NoSuchObjectLockConfiguration")
+                    || err_str.contains("InvalidRequest")
+                    || err_str.contains("AccessDenied")
+                {
+                    (None, None)
+                } else {
+                    // Log unexpected errors but continue
+                    eprintln!("Warning: Failed to get object retention: {}", err_str);
+                    (None, None)
+                }
+            }
+        };
+
+        // Parse legal hold result
+        let legal_hold = match legal_hold_result {
+            Ok(output) => output
+                .legal_hold()
+                .and_then(|lh| lh.status())
+                .map(|s| s.as_str() == "ON")
+                .unwrap_or(false),
+            Err(e) => {
+                let err_str = e.to_string();
+                // These errors mean no legal hold is set - not an error condition
+                if err_str.contains("ObjectLockConfigurationNotFoundError")
+                    || err_str.contains("NoSuchObjectLockConfiguration")
+                    || err_str.contains("InvalidRequest")
+                    || err_str.contains("AccessDenied")
+                {
+                    false
+                } else {
+                    // Log unexpected errors but continue
+                    eprintln!("Warning: Failed to get object legal hold: {}", err_str);
+                    false
+                }
+            }
+        };
+
+        // Object is locked if it has retention OR legal hold
+        let is_locked = retention_mode.is_some() || legal_hold;
+
+        Ok(ObjectLockStatus {
+            is_locked,
+            retention_mode,
+            retain_until_date,
+            legal_hold,
+        })
     }
 }

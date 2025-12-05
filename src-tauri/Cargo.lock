@@ -4071,6 +4071,7 @@ dependencies = [
  "aws-smithy-types",
  "base64 0.22.1",
  "chrono",
+ "clipboard-win",
  "cocoa 0.26.1",
  "dirs",
  "lazy_static",

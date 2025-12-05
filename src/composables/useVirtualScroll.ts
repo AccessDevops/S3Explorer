@@ -167,7 +167,7 @@ export function useVirtualScroll<T>(
   // Calculate start index (with buffer)
   const startIndex = computed(() => {
     if (!isEnabled.value) return 0
-    const allItems = items.value
+    const _allItems = items.value
 
     if (!isVariableHeight) {
       // Fixed height: simple calculation

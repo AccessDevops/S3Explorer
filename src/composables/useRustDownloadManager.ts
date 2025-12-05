@@ -95,14 +95,16 @@ export function useRustDownloadManager() {
 
   /**
    * Start a download (streaming to disk)
+   * If versionId is provided, downloads that specific version
    */
   const startDownload = async (
     profileId: string,
     bucket: string,
     key: string,
-    destPath: string
+    destPath: string,
+    versionId?: string
   ): Promise<string> => {
-    return await downloadFileService(profileId, bucket, key, destPath)
+    return await downloadFileService(profileId, bucket, key, destPath, versionId)
   }
 
   /**
