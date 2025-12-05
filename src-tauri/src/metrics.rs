@@ -23,6 +23,7 @@ pub fn emit_metrics(app: &AppHandle, event: S3MetricsEvent) {
 
 /// Helper to create and emit a successful metrics event
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub fn emit_success(
     app: &AppHandle,
     operation: S3Operation,
@@ -58,6 +59,7 @@ pub fn emit_success(
 
 /// Helper to create and emit a failed metrics event
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub fn emit_error(
     app: &AppHandle,
     operation: S3Operation,

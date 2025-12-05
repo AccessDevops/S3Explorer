@@ -449,7 +449,7 @@ impl DatabaseManager {
             WHERE profile_id = ?1 AND bucket_name = ?2 AND key = ?3
             "#,
                 params![self.profile_id, bucket_name, key],
-                |row| Self::row_to_indexed_object(row),
+                Self::row_to_indexed_object,
             )
             .optional()?;
 
@@ -958,10 +958,14 @@ impl DatabaseManager {
     ///
     /// Un prefixe est complet si:
     /// 1. Le bucket entier a ete indexe completement (initial_index_completed = true)
+    ///
     /// OU
+    ///
     /// 2. L'indexation partielle a depasse ce prefixe (last_indexed_key > prefix)
     ///    Ce qui signifie que tous les objets de ce prefixe ont ete indexes
+    ///
     /// OU
+    ///
     /// 3. Le prefix lui-meme est marque complet dans prefix_status
     ///    ET tous ses sous-prefixes sont aussi complets
     ///    ET tous les objets indexes ont leur parent_prefix dans prefix_status

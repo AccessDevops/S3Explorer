@@ -327,6 +327,7 @@ pub async fn calculate_bucket_stats(
 ///   also removes from the index any objects that no longer exist on S3.
 ///   This cleans up "phantom objects" that were deleted by another client.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn list_objects(
     app: AppHandle,
     profile_id: String,
@@ -1960,6 +1961,7 @@ pub async fn get_index_file_size(profile_id: String) -> Result<u64, String> {
 // ============================================================================
 
 /// Helper function to emit download progress events
+#[allow(clippy::too_many_arguments)]
 fn emit_download_progress(
     app: &AppHandle,
     download_id: &str,
@@ -2778,6 +2780,8 @@ pub async fn read_clipboard_files() -> Result<Vec<String>, String> {
 
 /// macOS-specific implementation using NSPasteboard
 #[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[allow(deprecated)]
 fn read_clipboard_files_macos() -> Result<Vec<String>, String> {
     use cocoa::base::{id, nil};
     use cocoa::foundation::NSString;
@@ -3007,7 +3011,7 @@ fn read_clipboard_files_fallback() -> Result<Vec<String>, String> {
                     let line = line.trim();
                     // Handle file:// URIs
                     let path = if line.starts_with("file://") {
-                        line.strip_prefix("file://").map(|s| urlencoding_decode(s))
+                        line.strip_prefix("file://").map(urlencoding_decode)
                     } else {
                         Some(line.to_string())
                     };
