@@ -366,7 +366,7 @@ mod tests {
         cache.insert("key3".to_string(), 3);
 
         // Force pending tasks to complete
-        cache.run_pending_tasks();
+        cache.cache.run_pending_tasks();
 
         // key1 and key3 should exist, key2 should be evicted
         assert!(cache.get(&"key1".to_string()).is_some());
@@ -380,10 +380,10 @@ mod tests {
             ManagedCache::new("test", CacheConfig::for_testing());
 
         cache.insert("key1".to_string(), 42);
-        assert!(cache.contains(&"key1".to_string()));
+        assert!(cache.get(&"key1".to_string()).is_some());
 
         cache.remove(&"key1".to_string());
-        assert!(!cache.contains(&"key1".to_string()));
+        assert!(cache.get(&"key1".to_string()).is_none());
     }
 
     #[test]
@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(cache.len(), 2);
 
         cache.clear();
-        cache.run_pending_tasks();
+        cache.cache.run_pending_tasks();
         assert_eq!(cache.len(), 0);
     }
 
@@ -414,7 +414,7 @@ mod tests {
 
         // Wait for idle timeout
         thread::sleep(Duration::from_secs(2));
-        cache.run_pending_tasks();
+        cache.cache.run_pending_tasks();
 
         // Should be evicted due to idle timeout
         // Note: moka's eviction is eventually consistent

@@ -1480,7 +1480,7 @@ mod tests {
 
         let obj = IndexedObject {
             id: None,
-            profile_id: db.profile_id().to_string(),
+            profile_id: db.profile_id.to_string(),
             bucket_name: "test-bucket".to_string(),
             key: "folder/file.txt".to_string(),
             version_id: None,
@@ -1518,7 +1518,7 @@ mod tests {
     #[test]
     fn test_calculate_prefix_stats() {
         let db = create_test_db().unwrap();
-        let profile_id = db.profile_id().to_string();
+        let profile_id = db.profile_id.to_string();
 
         // Inserer quelques objets
         for i in 0..5 {
@@ -1559,7 +1559,7 @@ mod tests {
     #[test]
     fn test_batch_upsert() {
         let db = create_test_db().unwrap();
-        let profile_id = db.profile_id().to_string();
+        let profile_id = db.profile_id.to_string();
 
         let objects: Vec<IndexedObject> = (0..100)
             .map(|i| IndexedObject {
@@ -1601,7 +1601,7 @@ mod tests {
     #[test]
     fn test_prefix_status() {
         let db = create_test_db().unwrap();
-        let profile_id = db.profile_id().to_string();
+        let profile_id = db.profile_id.to_string();
 
         let status = PrefixStatus {
             id: None,

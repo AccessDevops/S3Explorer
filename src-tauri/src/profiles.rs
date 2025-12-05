@@ -217,6 +217,7 @@ mod tests {
             secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
             session_token: None,
             path_style: true,
+            enabled: true,
         }
     }
 
