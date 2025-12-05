@@ -1,30 +1,27 @@
 <template>
   <div>
-    <Tooltip :text="t('settings')" side="top">
-      <span class="inline-block w-full">
-        <Button
-          variant="ghost"
-          class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
-          @click="showSettingsModal = true"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="lucide lucide-settings"
-          >
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        </Button>
-      </span>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
+      @click="showSettingsModal = true"
+      v-tooltip="t('settings')"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="lucide lucide-settings"
+      >
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    </Button>
 
     <!-- Settings Modal -->
     <Dialog v-model:open="showSettingsModal">
@@ -324,58 +321,42 @@
                   <span class="text-sm text-muted-foreground">MB</span>
                 </div>
               </div>
+
+              <!-- Max Initial Index Requests Setting -->
+              <div class="space-y-2">
+                <label class="text-sm font-medium">{{ t('maxInitialIndexRequests') }}</label>
+                <p class="text-xs text-muted-foreground">{{ t('maxInitialIndexRequestsDescription') }}</p>
+                <div class="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    :model-value="settingsStore.maxInitialIndexRequests"
+                    @change="(e: Event) => settingsStore.setMaxInitialIndexRequests(Number((e.target as HTMLInputElement).value))"
+                    min="1"
+                    max="100"
+                    class="flex-1"
+                  />
+                  <span class="text-sm text-muted-foreground">{{ t('requests') }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- SEARCH TAB -->
           <div v-if="activeTab === 'search'" class="space-y-6">
-            <!-- Index Settings Section -->
-            <div class="space-y-4 pb-4 border-b">
-              <div>
-                <h3 class="text-sm font-semibold">{{ t('indexSettings') }}</h3>
-                <p class="text-sm text-muted-foreground">{{ t('indexSettingsDescription') }}</p>
-              </div>
-
-              <!-- Index Validity Hours Setting -->
-              <div class="space-y-3">
-                <div>
-                  <label class="text-sm font-medium">{{ t('indexValidityHours') }}</label>
-                  <p class="text-sm text-muted-foreground">{{
-                    t('indexValidityHoursDescription')
-                  }}</p>
-                </div>
-                <div class="flex items-center gap-2 max-w-xs">
-                  <Input
-                    type="number"
-                    :model-value="settingsStore.indexValidityHours"
-                    @change="(e: Event) => settingsStore.setIndexValidityHours(Number((e.target as HTMLInputElement).value))"
-                    min="1"
-                    max="48"
-                    class="flex-1"
-                  />
-                  <span class="text-sm text-muted-foreground">{{ t('hours') }}</span>
-                </div>
-              </div>
-
-              <!-- Index Auto-Build Threshold Setting -->
-              <div class="space-y-3">
-                <div>
-                  <label class="text-sm font-medium">{{ t('indexAutoBuildThreshold') }}</label>
-                  <p class="text-sm text-muted-foreground">{{
-                    t('indexAutoBuildThresholdDescription')
-                  }}</p>
-                </div>
-                <div class="flex items-center gap-2 max-w-xs">
-                  <Input
-                    type="number"
-                    :model-value="settingsStore.indexAutoBuildThreshold"
-                    @change="(e: Event) => settingsStore.setIndexAutoBuildThreshold(Number((e.target as HTMLInputElement).value))"
-                    min="100"
-                    max="100000"
-                    class="flex-1"
-                  />
-                  <span class="text-sm text-muted-foreground">{{ t('objects') }}</span>
-                </div>
+            <!-- Index Validity Hours Setting -->
+            <div class="space-y-2 pb-4 border-b">
+              <label class="text-sm font-medium">{{ t('indexValidityHours') }}</label>
+              <p class="text-xs text-muted-foreground">{{ t('indexValidityHoursDescription') }}</p>
+              <div class="flex items-center gap-2 max-w-xs">
+                <Input
+                  type="number"
+                  :model-value="settingsStore.indexValidityHours"
+                  @change="(e: Event) => settingsStore.setIndexValidityHours(Number((e.target as HTMLInputElement).value))"
+                  min="1"
+                  max="48"
+                  class="flex-1"
+                />
+                <span class="text-sm text-muted-foreground">{{ t('hours') }}</span>
               </div>
             </div>
 
@@ -412,7 +393,7 @@
                     <th class="text-left py-2 px-3 font-medium">{{ t('connection') }}</th>
                     <th class="text-left py-2 px-3 font-medium">{{ t('bucket') }}</th>
                     <th class="text-right py-2 px-3 font-medium">{{ t('objects') }}</th>
-                    <th class="text-right py-2 px-3 font-medium">{{ t('size') }}</th>
+                    <th class="text-right py-2 px-3 font-medium">{{ t('indexSize') }}</th>
                     <th class="text-left py-2 px-3 font-medium">{{ t('created') }}</th>
                     <th class="text-center py-2 px-3 font-medium">{{ t('actions') }}</th>
                   </tr>
@@ -426,9 +407,9 @@
                     <td class="py-2 px-3">{{ index.profileName }}</td>
                     <td class="py-2 px-3 font-mono text-xs">{{ index.bucketName }}</td>
                     <td class="text-right py-2 px-3">{{ index.totalObjects.toLocaleString() }}</td>
-                    <td class="text-right py-2 px-3">{{ formatBytes(index.sizeInBytes) }}</td>
+                    <td class="text-right py-2 px-3">{{ formatBytes(index.estimatedIndexSize) }}</td>
                     <td class="py-2 px-3 text-xs text-muted-foreground">
-                      {{ formatIndexDate(index.lastBuilt) }}
+                      {{ index.lastIndexedAt ? formatIndexDate(index.lastIndexedAt) : '-' }}
                     </td>
                     <td class="text-center py-2 px-3">
                       <Button
@@ -483,11 +464,10 @@ import { logger } from '../utils/logger'
 import { useSettingsStore } from '../stores/settings'
 import { useAppStore } from '../stores/app'
 import { useI18n } from '../composables/useI18n'
-import { useSearchIndex } from '../composables/useSearchIndex'
+import { getIndexManager } from '../composables/useIndexManager'
 import { useToast } from '../composables/useToast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tooltip } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -500,7 +480,7 @@ import type { Language, ViewMode, EditorTheme } from '../stores/settings'
 const settingsStore = useSettingsStore()
 const appStore = useAppStore()
 const { t } = useI18n()
-const searchIndex = useSearchIndex()
+const indexManager = getIndexManager()
 const toast = useToast()
 const showSettingsModal = ref(false)
 const showDeleteAllConfirm = ref(false)
@@ -546,29 +526,39 @@ interface IndexTableRow {
   profileName: string
   bucketName: string
   totalObjects: number
-  sizeInBytes: number
-  lastBuilt: number
+  estimatedIndexSize: number // Estimated size of the index data for this bucket
+  lastIndexedAt: number | null
+  isComplete: boolean
 }
 
 const allIndexes = ref<IndexTableRow[]>([])
 
 // Load all indexes for the table
 async function loadAllIndexes() {
-  const indexes = await searchIndex.getAllIndexes()
+  const allRows: IndexTableRow[] = []
 
-  // Map indexes with profile names
-  allIndexes.value = indexes.map((index) => {
-    const profile = appStore.profiles.find((p) => p.id === index.profileId)
-    return {
-      id: `${index.profileId}-${index.bucketName}`,
-      profileId: index.profileId,
-      profileName: profile?.name || t('unknownProfile'),
-      bucketName: index.bucketName,
-      totalObjects: index.totalObjects,
-      sizeInBytes: index.sizeInBytes,
-      lastBuilt: index.lastBuilt,
+  // Fetch indexes from all profiles
+  for (const profile of appStore.profiles) {
+    try {
+      const indexes = await indexManager.getAllIndexes(profile.id)
+      for (const index of indexes) {
+        allRows.push({
+          id: `${profile.id}-${index.bucket_name}`,
+          profileId: profile.id,
+          profileName: profile.name,
+          bucketName: index.bucket_name,
+          totalObjects: index.total_objects,
+          estimatedIndexSize: index.estimated_index_size,
+          lastIndexedAt: index.last_indexed_at,
+          isComplete: index.is_complete,
+        })
+      }
+    } catch (error) {
+      logger.error(`Failed to get indexes for profile ${profile.id}`, error)
     }
-  })
+  }
+
+  allIndexes.value = allRows
 }
 
 // Format bytes to human-readable size
@@ -601,7 +591,7 @@ watch(activeTab, (tab) => {
 // Delete index from table
 async function handleDeleteIndexFromTable(profileId: string, bucketName: string) {
   try {
-    await searchIndex.deleteIndex(profileId, bucketName)
+    await indexManager.clearIndex(profileId, bucketName)
     // Reload the table
     await loadAllIndexes()
   } catch (error) {
@@ -620,7 +610,7 @@ async function confirmDeleteAllIndexes() {
   try {
     // Delete all indexes one by one
     for (const index of allIndexes.value) {
-      await searchIndex.deleteIndex(index.profileId, index.bucketName)
+      await indexManager.clearIndex(index.profileId, index.bucketName)
     }
     // Reload the table
     await loadAllIndexes()

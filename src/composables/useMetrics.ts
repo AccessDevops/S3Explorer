@@ -1,13 +1,14 @@
 /**
  * Composable for S3 request metrics tracking
  *
- * Listens to metrics events from the Rust backend and stores them in IndexedDB.
- * Provides reactive access to metrics data for the dashboard.
+ * Listens to metrics events from the Rust backend for real-time UI updates.
+ * Metrics are stored in SQLite on the backend side.
  */
 
 import { ref, computed, onMounted } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { metricsStorage } from '@/services/metricsStorage'
+import { invoke } from '@tauri-apps/api/tauri'
+import { useSettingsStore } from '@/stores/settings'
 import type {
   S3MetricsEvent,
   DailyStats,
@@ -15,9 +16,79 @@ import type {
   ErrorStats,
   BucketUsageStats,
   HourlyStats,
+  DailyDistribution,
+  WeeklyDistribution,
   S3Pricing,
 } from '@/types/metrics'
-import { eventToRecord, DEFAULT_S3_PRICING, calculateCost } from '@/types/metrics'
+import { DEFAULT_S3_PRICING, calculateCost } from '@/types/metrics'
+
+// Types from backend (snake_case)
+interface BackendDailyStats {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+  get_requests: number
+  put_requests: number
+  list_requests: number
+  delete_requests: number
+  estimated_cost_usd: number
+  avg_duration_ms: number
+  max_duration_ms: number
+  bytes_downloaded: number
+  bytes_uploaded: number
+  updated_at: number
+}
+
+interface BackendHourlyStats {
+  hour: number
+  count: number
+  success_count: number
+  failed_count: number
+}
+
+interface BackendOperationStats {
+  operation: string
+  count: number
+  success_count: number
+  failed_count: number
+  avg_duration_ms: number
+  total_bytes: number
+}
+
+interface BackendErrorStats {
+  category: string
+  count: number
+  last_occurrence: number
+  example_message: string | null
+}
+
+interface BackendBucketUsageStats {
+  bucket_name: string
+  request_count: number
+  bytes_transferred: number
+}
+
+interface BackendDailyDistribution {
+  date: string
+  day_label: string
+  count: number
+  success_count: number
+  failed_count: number
+}
+
+interface BackendWeeklyDistribution {
+  week_start: string
+  week_label: string
+  count: number
+  success_count: number
+  failed_count: number
+}
+
+interface StorageInfo {
+  request_count: number
+  oldest_date: string | null
+}
 
 // Shared state across all instances
 const initialized = ref(false)
@@ -30,28 +101,40 @@ const realtimeRequestCount = ref(0)
 let unlistenFn: UnlistenFn | null = null
 
 /**
+ * Get current pricing from settings store
+ */
+function getCurrentPricing(): { get_per_thousand: number; put_per_thousand: number; list_per_thousand: number } {
+  try {
+    const settingsStore = useSettingsStore()
+    const pricing = settingsStore.getCurrentPricing
+    return {
+      get_per_thousand: pricing.getPerThousand,
+      put_per_thousand: pricing.putPerThousand,
+      list_per_thousand: pricing.listPerThousand,
+    }
+  } catch {
+    return {
+      get_per_thousand: DEFAULT_S3_PRICING.getPerThousand,
+      put_per_thousand: DEFAULT_S3_PRICING.putPerThousand,
+      list_per_thousand: DEFAULT_S3_PRICING.listPerThousand,
+    }
+  }
+}
+
+/**
  * Initialize metrics listener (call once at app startup)
  */
 export async function initMetricsListener(): Promise<void> {
   if (initialized.value) return
 
   try {
-    await metricsStorage.init()
-
-    // Listen for metrics events from the Rust backend
-    unlistenFn = await listen<S3MetricsEvent>('metrics:s3-request', async (event) => {
-      const record = eventToRecord(event.payload)
-
-      try {
-        await metricsStorage.recordRequest(record)
-        realtimeRequestCount.value++
-        lastUpdate.value = Date.now()
-
-        // Invalidate today's stats cache
-        todayStats.value = null
-      } catch (error) {
-        console.error('Failed to record metrics:', error)
-      }
+    // Listen for metrics events from the Rust backend (for real-time counter updates)
+    unlistenFn = await listen<S3MetricsEvent>('metrics:s3-request', () => {
+      // Just update the counter - storage is handled by the backend
+      realtimeRequestCount.value++
+      lastUpdate.value = Date.now()
+      // Invalidate today's stats cache
+      todayStats.value = null
     })
 
     initialized.value = true
@@ -75,14 +158,38 @@ export function stopMetricsListener(): void {
 }
 
 /**
- * Refresh today's stats from storage
+ * Refresh today's stats from backend
  */
 async function refreshTodayStats(): Promise<void> {
   if (isLoading.value) return
 
   isLoading.value = true
   try {
-    todayStats.value = await metricsStorage.getTodayStats()
+    const pricing = getCurrentPricing()
+    const stats = await invoke<BackendDailyStats>('get_metrics_today', {
+      getPerThousand: pricing.get_per_thousand,
+      putPerThousand: pricing.put_per_thousand,
+      listPerThousand: pricing.list_per_thousand,
+    })
+
+    // Convert snake_case from backend to camelCase
+    todayStats.value = {
+      date: stats.date,
+      totalRequests: stats.total_requests,
+      successfulRequests: stats.successful_requests,
+      failedRequests: stats.failed_requests,
+      getRequests: stats.get_requests,
+      putRequests: stats.put_requests,
+      listRequests: stats.list_requests,
+      deleteRequests: stats.delete_requests,
+      estimatedCostUsd: stats.estimated_cost_usd,
+      avgDurationMs: stats.avg_duration_ms,
+      maxDurationMs: stats.max_duration_ms,
+      bytesDownloaded: stats.bytes_downloaded,
+      bytesUploaded: stats.bytes_uploaded,
+      updatedAt: stats.updated_at,
+    }
+
     lastUpdate.value = Date.now()
   } catch (error) {
     console.error('Failed to refresh today stats:', error)
@@ -145,49 +252,165 @@ export function useMetrics() {
 
   // Methods
   async function getStatsHistory(days: number): Promise<DailyStats[]> {
-    return metricsStorage.getStatsHistory(days)
+    const pricing = getCurrentPricing()
+    const stats = await invoke<BackendDailyStats[]>('get_metrics_history', {
+      days,
+      getPerThousand: pricing.get_per_thousand,
+      putPerThousand: pricing.put_per_thousand,
+      listPerThousand: pricing.list_per_thousand,
+    })
+
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      date: s.date,
+      totalRequests: s.total_requests,
+      successfulRequests: s.successful_requests,
+      failedRequests: s.failed_requests,
+      getRequests: s.get_requests,
+      putRequests: s.put_requests,
+      listRequests: s.list_requests,
+      deleteRequests: s.delete_requests,
+      estimatedCostUsd: s.estimated_cost_usd,
+      avgDurationMs: s.avg_duration_ms,
+      maxDurationMs: s.max_duration_ms,
+      bytesDownloaded: s.bytes_downloaded,
+      bytesUploaded: s.bytes_uploaded,
+      updatedAt: s.updated_at,
+    }))
   }
 
   async function getHourlyStats(): Promise<HourlyStats[]> {
-    return metricsStorage.getTodayHourlyStats()
+    const stats = await invoke<BackendHourlyStats[]>('get_metrics_hourly', { date: null })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      hour: s.hour,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getHourlyStatsPeriod(days: number): Promise<HourlyStats[]> {
+    const stats = await invoke<BackendHourlyStats[]>('get_metrics_hourly_period', { days })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      hour: s.hour,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getDailyDistribution(days: number): Promise<DailyDistribution[]> {
+    const stats = await invoke<BackendDailyDistribution[]>('get_metrics_daily_distribution', { days })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      date: s.date,
+      dayLabel: s.day_label,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getWeeklyDistribution(days: number): Promise<WeeklyDistribution[]> {
+    const stats = await invoke<BackendWeeklyDistribution[]>('get_metrics_weekly_distribution', { days })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      weekStart: s.week_start,
+      weekLabel: s.week_label,
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+    }))
+  }
+
+  async function getPeriodStats(days: number): Promise<DailyStats> {
+    const pricing = getCurrentPricing()
+    const stats = await invoke<BackendDailyStats>('get_metrics_period', {
+      days,
+      getPerThousand: pricing.get_per_thousand,
+      putPerThousand: pricing.put_per_thousand,
+      listPerThousand: pricing.list_per_thousand,
+    })
+
+    // Convert snake_case from backend to camelCase
+    return {
+      date: stats.date,
+      totalRequests: stats.total_requests,
+      successfulRequests: stats.successful_requests,
+      failedRequests: stats.failed_requests,
+      getRequests: stats.get_requests,
+      putRequests: stats.put_requests,
+      listRequests: stats.list_requests,
+      deleteRequests: stats.delete_requests,
+      estimatedCostUsd: stats.estimated_cost_usd,
+      avgDurationMs: stats.avg_duration_ms,
+      maxDurationMs: stats.max_duration_ms,
+      bytesDownloaded: stats.bytes_downloaded,
+      bytesUploaded: stats.bytes_uploaded,
+      updatedAt: stats.updated_at,
+    }
   }
 
   async function getOperationStats(days: number): Promise<OperationStats[]> {
-    return metricsStorage.getOperationStats(days)
+    const stats = await invoke<BackendOperationStats[]>('get_metrics_by_operation', { days })
+    // Convert snake_case to camelCase and cast string to enum
+    return stats.map(s => ({
+      operation: s.operation as unknown as OperationStats['operation'],
+      count: s.count,
+      successCount: s.success_count,
+      failedCount: s.failed_count,
+      avgDurationMs: s.avg_duration_ms,
+      totalBytes: s.total_bytes,
+    }))
   }
 
   async function getErrorStats(days: number): Promise<ErrorStats[]> {
-    return metricsStorage.getErrorStats(days)
+    const stats = await invoke<BackendErrorStats[]>('get_metrics_errors', { days })
+    // Convert snake_case to camelCase and cast string to enum
+    return stats.map(s => ({
+      category: s.category as unknown as ErrorStats['category'],
+      count: s.count,
+      lastOccurrence: s.last_occurrence,
+      exampleMessage: s.example_message ?? undefined,
+    }))
   }
 
   async function getTopBuckets(days: number, limit: number = 10): Promise<BucketUsageStats[]> {
-    return metricsStorage.getTopBuckets(days, limit)
+    const stats = await invoke<BackendBucketUsageStats[]>('get_metrics_top_buckets', { days, limit })
+    // Convert snake_case to camelCase
+    return stats.map(s => ({
+      bucketName: s.bucket_name,
+      requestCount: s.request_count,
+      bytesTransferred: s.bytes_transferred,
+    }))
   }
 
   async function getRecentRequests(limit: number = 100) {
-    return metricsStorage.getRecentRequests(limit)
+    return invoke('get_metrics_recent', { limit })
   }
 
   async function getFailedRequests(days: number, limit: number = 50) {
-    return metricsStorage.getFailedRequests(days, limit)
+    return invoke('get_metrics_failed', { days, limit })
   }
 
   async function purgeData(retentionDays: number): Promise<number> {
-    const count = await metricsStorage.purgeOldData(retentionDays)
+    const count = await invoke<number>('purge_metrics', { retentionDays })
     await refreshTodayStats()
     return count
   }
 
-  async function exportCSV(fromDate: string, toDate: string): Promise<string> {
-    return metricsStorage.exportToCSV(fromDate, toDate)
-  }
-
-  async function getStorageInfo() {
-    return metricsStorage.getStorageInfo()
+  async function getStorageInfo(): Promise<{ requestCount: number; oldestDate: string | null }> {
+    const info = await invoke<StorageInfo>('get_metrics_storage_info')
+    return {
+      requestCount: info.request_count,
+      oldestDate: info.oldest_date,
+    }
   }
 
   async function clearAllData(): Promise<void> {
-    await metricsStorage.clearAll()
+    await invoke('clear_metrics')
     todayStats.value = null
     realtimeRequestCount.value = 0
   }
@@ -222,13 +445,16 @@ export function useMetrics() {
     refreshTodayStats,
     getStatsHistory,
     getHourlyStats,
+    getHourlyStatsPeriod,
+    getDailyDistribution,
+    getWeeklyDistribution,
+    getPeriodStats,
     getOperationStats,
     getErrorStats,
     getTopBuckets,
     getRecentRequests,
     getFailedRequests,
     purgeData,
-    exportCSV,
     getStorageInfo,
     clearAllData,
     calculateCustomCost,

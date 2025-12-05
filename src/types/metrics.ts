@@ -151,6 +151,28 @@ export interface HourlyStats {
 }
 
 /**
+ * Daily distribution for 7-day view
+ */
+export interface DailyDistribution {
+  date: string                    // YYYY-MM-DD
+  dayLabel: string                // Mon, Tue, etc.
+  count: number
+  successCount: number
+  failedCount: number
+}
+
+/**
+ * Weekly distribution for 30-day view
+ */
+export interface WeeklyDistribution {
+  weekStart: string               // YYYY-MM-DD
+  weekLabel: string               // "Dec 02" format
+  count: number
+  successCount: number
+  failedCount: number
+}
+
+/**
  * S3 pricing configuration (per 1000 requests)
  */
 export interface S3Pricing {

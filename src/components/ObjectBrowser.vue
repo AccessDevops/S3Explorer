@@ -112,6 +112,22 @@
             <!-- LIVE SEARCH MODE -->
             <div v-else class="flex items-center gap-3">
               <div class="flex items-center gap-2">
+                <!-- Search indicator -->
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-muted-foreground"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
                 <span v-if="isSearching" class="text-muted-foreground">{{ t('searching') }}...</span>
                 <span v-else class="text-green-600 dark:text-green-400 font-medium">✓ {{ t('searchComplete') }}</span>
                 <span class="font-medium text-primary">{{ searchProgress }} {{ t('found') }}</span>
@@ -296,8 +312,9 @@
           <div class="flex-1 min-w-0">
             <div class="font-medium truncate" :class="textSize">{{ getFolderName(folder) }}</div>
           </div>
-          <div class="text-sm text-muted-foreground w-24 text-right">
-            {{ getFolderSize(folder) }}
+          <div class="text-sm text-muted-foreground w-24 text-right" :class="{ 'text-yellow-400': isFolderSizeEstimate(folder) }">
+            <span v-if="isFolderSizeEstimate(folder)" v-tooltip="t('estimateTooltip')">{{ getFolderSize(folder).replace(/(\s)/, '⁺$1') }}</span>
+            <span v-else>{{ getFolderSize(folder) }}</span>
           </div>
           <div class="text-sm text-muted-foreground w-40 text-right">-</div>
           <div
@@ -393,6 +410,19 @@
                 {{ obj.key.substring(0, obj.key.lastIndexOf('/')) }}/
               </div>
             </div>
+            <!-- Storage Class Badge -->
+            <Tooltip
+              v-if="getStorageClassInfo(obj.storage_class)"
+              :text="getStorageClassInfo(obj.storage_class)!.tooltip"
+              side="top"
+            >
+              <span
+                class="text-[9px] font-medium px-1.5 py-0.5 rounded flex-shrink-0"
+                :class="[getStorageClassInfo(obj.storage_class)!.colorClass, getStorageClassInfo(obj.storage_class)!.bgClass]"
+              >
+                {{ getStorageClassInfo(obj.storage_class)!.label }}
+              </span>
+            </Tooltip>
             <div class="text-sm text-muted-foreground w-24 flex-shrink-0 text-right tabular-nums">
               {{ formatSize(obj.size) }}
             </div>
@@ -506,10 +536,13 @@
                 'ml-4'
               ]"
             >
+              <!-- Spacer to align with parent's version arrow -->
               <div class="flex-shrink-0 w-4"></div>
+              <!-- Version icon -->
               <div class="flex-shrink-0">
                 <PhClock :size="iconSize" class="text-muted-foreground" weight="duotone" />
               </div>
+              <!-- Version ID and badge -->
               <div class="flex-1 min-w-0">
                 <div class="font-medium truncate" :class="textSize">
                   {{ version.version_id.substring(0, 12) }}...
@@ -520,23 +553,62 @@
                     {{ t('latest') }}
                   </span>
                 </div>
-                <div class="text-xs text-muted-foreground truncate">
-                  {{ formatDate(version.last_modified) }}
-                </div>
               </div>
+              <!-- Size column - aligned with parent -->
               <div class="text-sm text-muted-foreground w-24 flex-shrink-0 text-right tabular-nums">
                 {{ formatSize(version.size) }}
               </div>
-              <div class="w-40 flex-shrink-0"></div>
-              <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity w-36 flex-shrink-0 justify-end">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  @click.stop="downloadObjectVersion(version)"
-                  v-tooltip="t('download')"
-                >
-                  <PhDownloadSimple :size="16" />
-                </Button>
+              <!-- Date column - aligned with parent -->
+              <div class="text-sm text-muted-foreground w-40 flex-shrink-0 text-right tabular-nums">
+                {{ formatDate(version.last_modified) }}
+              </div>
+              <!-- Actions menu - aligned with parent -->
+              <div
+                class="flex gap-1 transition-opacity w-20 flex-shrink-0 justify-end"
+                :class="'opacity-0 group-hover:opacity-100'"
+              >
+                <div class="relative" @mouseleave="showVersionActionsMenu = null">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    @click.stop="showVersionActionsMenu = showVersionActionsMenu === version.version_id ? null : version.version_id"
+                    @mouseenter="showVersionActionsMenu = version.version_id"
+                  >
+                    <PhDotsThree :size="16" weight="bold" />
+                  </Button>
+
+                  <!-- Version actions dropdown menu -->
+                  <Transition name="fade">
+                    <div
+                      v-if="showVersionActionsMenu === version.version_id"
+                      @click.stop
+                      class="absolute right-full top-0 z-[9999]"
+                    >
+                      <div class="min-w-[140px] rounded-md border bg-card backdrop-blur-sm p-0.5 text-card-foreground shadow-xl">
+                        <!-- Download version -->
+                        <button
+                          @click="downloadObjectVersion(version); showVersionActionsMenu = null"
+                          class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-accent text-left"
+                        >
+                          <PhDownloadSimple :size="14" />
+                          {{ t('download') }}
+                        </button>
+
+                        <!-- Divider -->
+                        <div class="my-0.5 h-px bg-border"></div>
+
+                        <!-- Delete version -->
+                        <button
+                          @click="deleteVersionConfirm(version); showVersionActionsMenu = null"
+                          class="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-xs leading-tight hover:bg-destructive/10 text-destructive text-left"
+                        >
+                          <PhTrash :size="14" />
+                          {{ t('deleteVersion') }}
+                        </button>
+                      </div>
+                    </div>
+                  </Transition>
+                </div>
               </div>
             </div>
           </div>
@@ -779,11 +851,39 @@
           <DialogTitle class="flex items-center gap-2 flex-shrink-0">
             <span>{{ viewingObject ? getFileName(viewingObject.key) : '' }}</span>
             <span
-              v-if="objectViewerRef?.contentType"
+              v-if="viewerContentType"
               class="text-xs font-normal text-muted-foreground px-2 py-1 bg-muted rounded"
             >
-              {{ objectViewerRef.contentType }}
+              {{ viewerContentType }}
             </span>
+            <!-- Object Lock Status Badge -->
+            <Tooltip v-if="viewModalLockStatus?.is_locked" side="bottom">
+              <span
+                class="text-xs font-medium text-red-600 dark:text-red-400 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded flex items-center gap-1"
+              >
+                <PhLock :size="14" weight="fill" />
+                {{ t('objectLocked') }}
+              </span>
+              <template #content>
+                <div class="text-xs space-y-1 max-w-xs">
+                  <div v-if="viewModalLockStatus.retention_mode" class="flex justify-between gap-4">
+                    <span class="text-muted-foreground">{{ t('retentionMode') }}:</span>
+                    <span class="font-medium">{{ viewModalLockStatus.retention_mode }}</span>
+                  </div>
+                  <div v-if="viewModalLockStatus.retain_until_date" class="flex justify-between gap-4">
+                    <span class="text-muted-foreground">{{ t('retainUntil') }}:</span>
+                    <span class="font-medium">{{ formatLockDate(viewModalLockStatus.retain_until_date) }}</span>
+                  </div>
+                  <div v-if="viewModalLockStatus.legal_hold" class="flex justify-between gap-4">
+                    <span class="text-muted-foreground">{{ t('legalHold') }}:</span>
+                    <span class="font-medium text-red-500">{{ t('active') }}</span>
+                  </div>
+                  <div v-if="!viewModalLockStatus.retention_mode && !viewModalLockStatus.legal_hold" class="text-muted-foreground">
+                    {{ t('objectLocked') }}
+                  </div>
+                </div>
+              </template>
+            </Tooltip>
           </DialogTitle>
         </DialogHeader>
 
@@ -853,12 +953,12 @@
                   </div>
 
                   <div
-                    v-if="objectViewerRef?.contentType"
+                    v-if="viewerContentType"
                     class="font-medium text-muted-foreground"
                   >
                     {{ t('contentType') }}:
                   </div>
-                  <div v-if="objectViewerRef?.contentType">{{ objectViewerRef.contentType }}</div>
+                  <div v-if="viewerContentType">{{ viewerContentType }}</div>
                 </div>
               </div>
             </div>
@@ -1528,7 +1628,7 @@
                   <p>
                     {{ t('currentObjects') }}:
                     <span class="font-medium">
-                      {{ indexUpdateCurrentCount === -1 ? `> ${settingsStore.indexAutoBuildThreshold}` : indexUpdateCurrentCount.toLocaleString() }}
+                      {{ indexUpdateCurrentCount === -1 ? '-' : indexUpdateCurrentCount.toLocaleString() }}
                     </span>
                   </p>
                   <p v-if="indexUpdateObjectDiff !== 0" :class="indexUpdateObjectDiff > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
@@ -1570,8 +1670,21 @@
       </Card>
     </Transition>
 
-    <!-- Upload progress popup -->
-    <RustUploadProgress />
+    <!-- Download progress popup -->
+    <DownloadProgress />
+
+    <!-- Clipboard paste upload confirmation dialog -->
+    <ClipboardUploadConfirm
+      :show="clipboardUpload.showConfirmDialog.value"
+      :items="clipboardUpload.pendingItems.value"
+      :current-bucket="appStore.currentBucket || ''"
+      :current-prefix="appStore.currentPrefix"
+      :is-uploading="clipboardUpload.isUploading.value"
+      @confirm="clipboardUpload.confirmUpload"
+      @cancel="clipboardUpload.cancelUpload"
+      @update-name="clipboardUpload.updateItemName"
+      @remove-item="clipboardUpload.removeItem"
+    />
 
     <!-- Fullscreen Image Editor - Rendered outside dialog to avoid focus trap -->
     <div
@@ -1635,15 +1748,21 @@ import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
 import { useToast } from '../composables/useToast'
 import { useSwipeBack } from '../composables/useSwipeBack'
-import { useSearchIndex } from '../composables/useSearchIndex'
+import { getIndexManager } from '../composables/useIndexManager'
+import { useBucketStats } from '../composables/useBucketStats'
 import { useVirtualScroll } from '../composables/useVirtualScroll'
 import { formatSize, formatDate, formatTime } from '../utils/formatters'
 import { logger } from '../utils/logger'
 import { validateObjectKey } from '../utils/validators'
 import { useRustUploadManager } from '../composables/useRustUploadManager'
+import { useRustDownloadManager } from '../composables/useRustDownloadManager'
+import { useOptimisticBatch } from '../composables/useOptimisticBatch'
+import { useClipboardUpload } from '../composables/useClipboardUpload'
+import { useObjectLock } from '../composables/useObjectLock'
 import {
   createFolder as createFolderService,
   deleteObject,
+  deleteObjectVersion,
   calculateFolderSize,
   deleteFolder,
   putObject,
@@ -1655,17 +1774,18 @@ import {
   deleteObjectTags,
   getObjectMetadata,
   updateObjectMetadata,
+  isPrefixKnown,
 } from '../services/tauri'
 import { save, open } from '@tauri-apps/api/dialog'
-import { writeBinaryFile } from '@tauri-apps/api/fs'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse } from '../types'
+import type { S3Object, ObjectVersion, ObjectTag, GetObjectMetadataResponse, ObjectLockStatus } from '../types'
 import ObjectViewer from './ObjectViewer.vue'
 import ImageEditor from './ImageEditor.vue'
 import ContextMenu from './ContextMenu.vue'
 import IndexButton from './IndexButton.vue'
-import RustUploadProgress from './RustUploadProgress.vue'
+import DownloadProgress from './DownloadProgress.vue'
+import ClipboardUploadConfirm from './ClipboardUploadConfirm.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -1677,6 +1797,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tooltip } from '@/components/ui/tooltip'
 import {
   PhFolder,
   PhImage,
@@ -1770,7 +1891,12 @@ const { t } = useI18n()
 const dialog = useDialog()
 const toast = useToast()
 const rustUploadManager = useRustUploadManager()
-const searchIndex = useSearchIndex()
+const rustDownloadManager = useRustDownloadManager()
+const optimisticBatch = useOptimisticBatch()
+const clipboardUpload = useClipboardUpload()
+const indexManager = getIndexManager()
+const bucketStatsComposable = useBucketStats()
+const objectLock = useObjectLock()
 
 // Grouped reactive state - Modals
 const modals = reactive({
@@ -2024,6 +2150,8 @@ const draggingFolder = ref<string | null>(null)
 const viewingObject = ref<S3Object | null>(null)
 const showViewModal = ref(false)
 const viewModalVersions = ref<ObjectVersion[]>([])
+const viewModalLockStatus = ref<ObjectLockStatus | null>(null)
+const loadingLockStatus = ref(false)
 
 // Image editor refs (rendered outside dialog to avoid focus trap)
 const showImageEditor = ref(false)
@@ -2070,7 +2198,10 @@ const loadingInlineVersions = ref(new Set<string>())
 
 // Folder size refs (will be migrated to folderSizes grouped state)
 const folderSizes = ref(new Map<string, number>())
+const folderSizeIsEstimate = ref(new Map<string, boolean>()) // Track which folders have estimated sizes
 const loadingFolderSizes = ref(new Set<string>())
+const unknownFolders = ref(new Set<string>()) // Track folders not in index (never browsed)
+const lastProcessedIndexStatus = ref<Record<string, string>>({}) // Track last processed index status to avoid redundant recalculations
 
 // Clipboard refs (will be migrated to clipboard grouped state)
 const copiedFile = ref<S3Object | null>(null)
@@ -2092,6 +2223,7 @@ const changingContentType = ref(false)
 // Actions menu ref - tracks which object's actions menu is open
 const showActionsMenu = ref<string | null>(null)
 const showCopySubmenu = ref<string | null>(null)
+const showVersionActionsMenu = ref<string | null>(null)
 
 // Setup swipe back gesture
 useSwipeBack(objectListRef, () => {
@@ -2127,12 +2259,16 @@ const headersCount = computed(() => {
   count += Object.keys(viewModalHeaders.value.metadata || {}).length
   return count
 })
+// Shared computed for ObjectViewer's contentType to ensure consistency
+// between count and display (avoids potential reactivity issues with template refs)
+const viewerContentType = computed(() => objectViewerRef.value?.contentType ?? null)
+
 const metadataCount = computed(() => {
   if (!viewingObject.value) return 0
   let count = 3 // key, size, lastModified always present
   if (viewingObject.value.storage_class) count++
   if (viewingObject.value.e_tag) count++
-  if (objectViewerRef.value?.contentType) count++
+  if (viewerContentType.value) count++
   return count
 })
 const permissionsCount = computed(() => 0) // No permissions implemented yet
@@ -2349,6 +2485,8 @@ const selectedTotalSize = computed(() => {
 })
 
 // Watch for folder changes and calculate sizes
+// Note: deep: true is required because the store mutates the folders array with push()
+// instead of replacing it when loading more objects
 watch(
   () => appStore.folders,
   async (folders) => {
@@ -2356,16 +2494,32 @@ watch(
     if (!appStore.currentProfile || !appStore.currentBucket) return
 
     for (const folder of folders) {
+      // Skip if we already have the size or know it's unknown
       if (folderSizes.value.has(folder)) continue
+      if (unknownFolders.value.has(folder)) continue
 
       loadingFolderSizes.value.add(folder)
       try {
-        const size = await calculateFolderSize(
+        // First check if this prefix has any objects in the index
+        const known = await isPrefixKnown(
           appStore.currentProfile.id,
           appStore.currentBucket,
           folder
         )
-        folderSizes.value.set(folder, size)
+
+        if (!known) {
+          // Folder has never been browsed/indexed - show "-"
+          unknownFolders.value.add(folder)
+        } else {
+          // Folder is known in index - calculate size
+          const [size, isEstimate] = await calculateFolderSize(
+            appStore.currentProfile.id,
+            appStore.currentBucket,
+            folder
+          )
+          folderSizes.value.set(folder, size)
+          folderSizeIsEstimate.value.set(folder, isEstimate)
+        }
       } catch (e) {
         logger.error(`Failed to calculate size for ${folder}:`, e)
       } finally {
@@ -2373,7 +2527,79 @@ watch(
       }
     }
   },
-  { immediate: true }
+  { immediate: true, deep: true }
+)
+
+// Watch for index completion to recalculate folder sizes
+// This fixes the race condition where folders are marked as "unknown" before indexation completes
+watch(
+  () => indexManager.indexProgress.value,
+  async (progressMap) => {
+    // 1. Verify context
+    if (!appStore.currentProfile || !appStore.currentBucket) return
+
+    const profileId = appStore.currentProfile.id
+    const bucket = appStore.currentBucket
+    const prefix = appStore.currentPrefix
+    const key = `${profileId}-${bucket}`
+
+    const progress = progressMap[key]
+    if (!progress) return
+
+    // 2. Only react to 'completed' or 'partial' status
+    if (progress.status !== 'completed' && progress.status !== 'partial') return
+
+    // 3. Avoid redundant recalculations
+    const statusKey = `${key}-${progress.status}-${progress.objects_indexed}`
+    if (lastProcessedIndexStatus.value[key] === statusKey) return
+    lastProcessedIndexStatus.value[key] = statusKey
+
+    logger.debug(`[IndexWatch] Indexation finished for ${bucket}, recalculating folder sizes`)
+
+    // 4. Copy current folders (avoid mutation during iteration)
+    const currentFolders = [...appStore.folders]
+    if (currentFolders.length === 0) return
+
+    // 5. Clear caches
+    unknownFolders.value.clear()
+    folderSizes.value.clear()
+    folderSizeIsEstimate.value.clear()
+
+    // 6. Recalculate for each folder
+    for (const folder of currentFolders) {
+      // Check that context hasn't changed (race condition protection)
+      if (
+        appStore.currentBucket !== bucket ||
+        appStore.currentProfile?.id !== profileId ||
+        appStore.currentPrefix !== prefix
+      ) {
+        logger.debug('[IndexWatch] Context changed, aborting recalculation')
+        return
+      }
+
+      loadingFolderSizes.value.add(folder)
+      try {
+        const known = await isPrefixKnown(profileId, bucket, folder)
+
+        if (!known) {
+          unknownFolders.value.add(folder)
+        } else {
+          const [size, isEstimate] = await calculateFolderSize(profileId, bucket, folder)
+          folderSizes.value.set(folder, size)
+          folderSizeIsEstimate.value.set(folder, isEstimate)
+        }
+      } catch (e) {
+        logger.error(`[IndexWatch] Error calculating size for ${folder}:`, e)
+      } finally {
+        loadingFolderSizes.value.delete(folder)
+      }
+    }
+
+    logger.debug(
+      `[IndexWatch] Recalculation complete: ${folderSizes.value.size} sizes, ${unknownFolders.value.size} unknown`
+    )
+  },
+  { deep: true }
 )
 
 // Stop search function
@@ -2401,19 +2627,19 @@ async function handleIndexChanged() {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   // Reload index status
-  const hasIndex = await searchIndex.hasValidIndex(
+  const isIndexed = await indexManager.isIndexed(
     appStore.currentProfile.id,
     appStore.currentBucket
   )
-  hasSearchIndex.value = hasIndex
+  hasSearchIndex.value = isIndexed
 
-  if (hasIndex) {
-    const metadata = await searchIndex.getIndexMetadata(
+  if (isIndexed) {
+    const stats = await indexManager.getIndexStats(
       appStore.currentProfile.id,
       appStore.currentBucket
     )
-    if (metadata) {
-      currentIndexSize.value = metadata.totalObjects
+    if (stats) {
+      currentIndexSize.value = stats.total_objects
     }
   } else {
     currentIndexSize.value = 0
@@ -2427,12 +2653,14 @@ async function handleBuildIndexFromPrompt() {
   showIndexBuildPrompt.value = false
 
   try {
-    const index = await searchIndex.buildIndex(
+    const result = await indexManager.startIndexing(
       appStore.currentProfile.id,
       appStore.currentBucket
     )
-    hasSearchIndex.value = true
-    currentIndexSize.value = index.totalObjects
+    if (result) {
+      hasSearchIndex.value = true
+      currentIndexSize.value = result.total_indexed
+    }
   } catch (error) {
     logger.error('Failed to build index:', error)
     toast.error(t('errorOccurred'))
@@ -2446,12 +2674,19 @@ async function handleUpdateIndexFromPrompt() {
   showIndexUpdatePrompt.value = false
 
   try {
-    const index = await searchIndex.rebuildIndex(
+    // Clear existing index and rebuild
+    await indexManager.clearIndex(
       appStore.currentProfile.id,
       appStore.currentBucket
     )
-    hasSearchIndex.value = true
-    currentIndexSize.value = index.totalObjects
+    const result = await indexManager.startIndexing(
+      appStore.currentProfile.id,
+      appStore.currentBucket
+    )
+    if (result) {
+      hasSearchIndex.value = true
+      currentIndexSize.value = result.total_indexed
+    }
   } catch (error) {
     logger.error('Failed to update index:', error)
     toast.error(t('errorOccurred'))
@@ -2517,57 +2752,56 @@ watch(searchQuery, async (query) => {
       const searchPrefix = settingsStore.searchMode === 'local' ? appStore.currentPrefix : ''
 
       // ═══════════════════════════════════════════════════════════
-      // TRY INDEX FIRST (ultra-fast if available and valid)
+      // TRY INDEX FIRST (ultra-fast SQLite search)
+      // Skip if Force S3 Search is enabled
       // ═══════════════════════════════════════════════════════════
 
-      const hasIndex = await searchIndex.hasValidIndex(profileId, bucket)
-      const indexEnabled = searchIndex.isIndexEnabled(profileId, bucket)
+      const hasIndex = await indexManager.isIndexed(profileId, bucket)
 
       // Check version again after async operation
       if (currentSearchVersion !== searchVersion.value) return
 
-      if (hasIndex && indexEnabled) {
-        logger.debug('Using search index for instant results')
+      // Use index only if available AND Force S3 Search is not enabled
+      if (hasIndex && !settingsStore.forceS3Search) {
+        logger.debug('Using SQLite index for instant results')
         useIndexForSearch.value = true
 
-        const index = await searchIndex.loadIndex(profileId, bucket)
+        const results = await indexManager.searchObjects(
+          profileId,
+          bucket,
+          query,
+          searchPrefix || undefined
+        )
 
         // Check version again after async operation
         if (currentSearchVersion !== searchVersion.value) return
 
-        if (index) {
-          const results = searchIndex.searchInIndex(index, query, searchPrefix)
-          globalSearchResults.value = results
-          searchProgress.value = results.length
-          searchDuration.value = Date.now() - searchStartTime.value
+        globalSearchResults.value = results
+        searchProgress.value = results.length
+        searchDuration.value = Date.now() - searchStartTime.value
 
-          logger.debug(`Index search complete: ${results.length} results in ${searchDuration.value}ms`)
+        logger.debug(`Index search complete: ${results.length} results in ${searchDuration.value}ms`)
 
-          // Mark search as complete (bar stays visible as long as searchQuery exists)
-          isSearching.value = false
+        // Mark search as complete (bar stays visible as long as searchQuery exists)
+        isSearching.value = false
 
-          return
-        }
+        return
       }
 
       // ═══════════════════════════════════════════════════════════
       // FALLBACK: LIVE SEARCH (with improved feedback)
       // ═══════════════════════════════════════════════════════════
 
-      logger.debug('Using live search (no valid index)')
+      logger.debug(settingsStore.forceS3Search ? 'Using live search (Force S3 enabled)' : 'Using live search (no index)')
       useIndexForSearch.value = false
       searchAbortController.value = new AbortController()
 
-      // Record cache miss - search is falling back to S3
-      searchIndex.recordSearchCacheMiss(profileId, bucket)
-
       let continuationToken: string | undefined = undefined
-      const MAX_SEARCH_RESULTS = 10000 // Limit to prevent memory overflow
       const queryLower = query.toLowerCase()
 
       // If no index exists and it's global search, suggest building one
       // (User can build index manually from settings if desired)
-      if (settingsStore.searchMode === 'global' && !hasIndex && !searchIndex.isBuilding.value) {
+      if (settingsStore.searchMode === 'global' && !hasIndex && !indexManager.isIndexing(profileId, bucket)) {
         logger.debug('No search index found for global search - using live search')
       }
 
@@ -2575,12 +2809,6 @@ watch(searchQuery, async (query) => {
       do {
         // Check if search was aborted or version changed
         if (searchAbortController.value.signal.aborted || currentSearchVersion !== searchVersion.value) {
-          break
-        }
-
-        // Check if we've reached the maximum limit
-        if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
-          toast.warning(t('searchLimitReached', MAX_SEARCH_RESULTS))
           break
         }
 
@@ -2608,9 +2836,7 @@ watch(searchQuery, async (query) => {
         )
 
         // Append only matches (not all objects!)
-        const remainingSlots = MAX_SEARCH_RESULTS - globalSearchResults.value.length
-        const matchesToAdd = pageMatches.slice(0, remainingSlots)
-        globalSearchResults.value.push(...matchesToAdd)
+        globalSearchResults.value.push(...pageMatches)
 
         // ✨ IMPROVEMENT: Update progress with matches count (not total objects)
         searchProgress.value = globalSearchResults.value.length
@@ -2631,11 +2857,6 @@ watch(searchQuery, async (query) => {
           } else {
             searchTimeRemaining.value = 0
           }
-        }
-
-        // Stop if we've reached the limit
-        if (globalSearchResults.value.length >= MAX_SEARCH_RESULTS) {
-          break
         }
 
         // Check if there are more pages
@@ -2678,6 +2899,20 @@ watch(
     globalSearchResults.value = []
     searchQuery.value = ''
     isSearching.value = false
+    // Cancel pending optimistic batch (will be reloaded via loadObjects)
+    optimisticBatch.cancelBatch()
+  }
+)
+
+// Force flush optimistic batch when all uploads complete
+watch(
+  () => rustUploadManager.hasActiveUploads.value,
+  (hasActive, wasActive) => {
+    // Transition from "active" to "inactive" = all uploads completed
+    if (wasActive && !hasActive) {
+      logger.debug('[Upload] All uploads completed, flushing optimistic batch')
+      optimisticBatch.forceFlush()
+    }
   }
 )
 
@@ -2695,86 +2930,45 @@ watch(
     showIndexBuildPrompt.value = false
     showIndexUpdatePrompt.value = false
 
-    // Auto-build index for new bucket (if no valid index exists)
+    // Clear folder size state to prevent cross-bucket contamination
+    // These maps use folder names as keys without bucket prefix, so they must be cleared on bucket change
+    folderSizes.value.clear()
+    folderSizeIsEstimate.value.clear()
+    unknownFolders.value.clear()
+    loadingFolderSizes.value.clear()
+
+    // Check index status for new bucket
+    // Note: Auto-indexing is handled by BucketList.vue when bucket is selected
     if (newBucket && appStore.currentProfile) {
       const profileId = appStore.currentProfile.id
-      const indexStatus = await searchIndex.getIndexStatus(profileId, newBucket)
 
-      logger.debug(`[Index] Bucket ${newBucket}: exists=${indexStatus.exists}, isValid=${indexStatus.isValid}, age=${Math.round(indexStatus.age / 1000 / 60)}min, objects=${indexStatus.totalObjects}`)
+      // Check if bucket is indexed
+      const isIndexed = await indexManager.isIndexed(profileId, newBucket)
 
-      if (indexStatus.exists && indexStatus.isValid) {
-        // Valid index exists (< 8h old)
-        hasSearchIndex.value = true
-        currentIndexSize.value = indexStatus.totalObjects
-        logger.debug(`[Index] Valid index with ${indexStatus.totalObjects} objects`)
-      } else if (indexStatus.exists && !indexStatus.isValid) {
-        // Expired index exists (> 8h old) - check if we should update
-        hasSearchIndex.value = true // Keep using the old index until updated
-        currentIndexSize.value = indexStatus.totalObjects
+      if (isIndexed) {
+        const stats = await indexManager.getIndexStats(profileId, newBucket)
+        if (stats) {
+          hasSearchIndex.value = true
+          currentIndexSize.value = stats.total_objects
+          logger.debug(`[Index] Bucket ${newBucket}: indexed with ${stats.total_objects} objects, complete=${stats.is_complete}`)
 
-        logger.debug(`[Index] Expired index found (age: ${Math.round(indexStatus.age / 1000 / 60 / 60)}h)`)
-
-        if (!searchIndex.isBuilding.value) {
-          // Estimate current bucket size
-          const estimatedCount = await searchIndex.estimateBucketSize(profileId, newBucket)
-          logger.debug(`[Index] Current bucket size estimate: ${estimatedCount}`)
-
-          if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
-            // Auto-rebuild for small buckets (< threshold objects)
-            logger.debug(`[Index] Auto-rebuilding expired index for small bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
-            searchIndex.rebuildIndex(profileId, newBucket)
-              .then((index) => {
-                hasSearchIndex.value = true
-                currentIndexSize.value = index.totalObjects
-              })
-              .catch(error => {
-                logger.error('Failed to auto-rebuild index:', error)
-              })
-          } else {
-            // Show update prompt for large buckets
-            const diff = estimatedCount === -1 ? 0 : estimatedCount - indexStatus.totalObjects
-            logger.debug(`[Index] Showing update prompt. Diff: ${diff > 0 ? '+' : ''}${diff}`)
-
+          // Check if index is still valid (not expired)
+          const isValid = await indexManager.isIndexValid(profileId, newBucket)
+          if (!isValid) {
+            // Index is expired - show update prompt
+            indexUpdateIndexCount.value = stats.total_objects
+            // Try to get current object count from S3 (if available from bucket stats)
+            // For now, set to -1 to indicate unknown
+            indexUpdateCurrentCount.value = -1
+            indexUpdateObjectDiff.value = 0
             showIndexUpdatePrompt.value = true
-            indexUpdateObjectDiff.value = diff
-            indexUpdateCurrentCount.value = estimatedCount
-            indexUpdateIndexCount.value = indexStatus.totalObjects
-          }
-        }
-      } else if (!searchIndex.isBuilding.value) {
-        // No index exists - estimate bucket size to decide if we should auto-build
-        const estimatedCount = await searchIndex.estimateBucketSize(profileId, newBucket)
-        logger.debug(`[Index] Estimated bucket size: ${estimatedCount}`)
-
-        if (estimatedCount !== -1 && estimatedCount < settingsStore.indexAutoBuildThreshold) {
-          // Auto-build for small buckets (< threshold objects)
-          logger.debug(`[Index] Auto-building index for bucket with ${estimatedCount} objects (threshold=${settingsStore.indexAutoBuildThreshold})`)
-          searchIndex.buildIndex(profileId, newBucket)
-            .then((index) => {
-              hasSearchIndex.value = true
-              currentIndexSize.value = index.totalObjects
-            })
-            .catch(error => {
-              logger.error('Failed to auto-build index:', error)
-            })
-        } else if (estimatedCount === -1 || estimatedCount >= settingsStore.indexAutoBuildThreshold) {
-          // Show prompt for large buckets (>= threshold objects)
-          logger.debug(`[Index] Showing build prompt for large bucket (${estimatedCount} objects, threshold=${settingsStore.indexAutoBuildThreshold})`)
-          showIndexBuildPrompt.value = true
-          indexPromptObjectCount.value = estimatedCount
-
-          // Estimate index size
-          if (estimatedCount !== -1) {
-            const estimatedBytes = searchIndex.estimateIndexSize(estimatedCount)
-            indexPromptEstimatedSize.value = formatSize(estimatedBytes)
-          } else {
-            // When truncated, we know there are at least threshold objects
-            const minEstimatedBytes = searchIndex.estimateIndexSize(settingsStore.indexAutoBuildThreshold)
-            indexPromptEstimatedSize.value = `≈ ${formatSize(minEstimatedBytes)}`
+            logger.debug(`[Index] Bucket ${newBucket}: index expired, showing update prompt`)
           }
         }
       } else {
-        logger.debug(`[Index] Build already in progress, skipping prompt`)
+        hasSearchIndex.value = false
+        currentIndexSize.value = 0
+        logger.debug(`[Index] Bucket ${newBucket}: not indexed`)
       }
     }
   }
@@ -2799,9 +2993,17 @@ function getFolderSize(folder: string): string {
   if (loadingFolderSizes.value.has(folder)) {
     return t('calculating')
   }
+  // Check if folder is known to be unknown (never browsed/indexed)
+  if (unknownFolders.value.has(folder)) {
+    return '-'
+  }
   const size = folderSizes.value.get(folder)
   if (size === undefined) return '-'
   return formatSize(size)
+}
+
+function isFolderSizeEstimate(folder: string): boolean {
+  return folderSizeIsEstimate.value.get(folder) ?? false
 }
 
 /**
@@ -2853,6 +3055,14 @@ async function reloadAllPages() {
         })
       }
 
+      // Invalidate bucket stats cache to force recalculation from updated index
+      if (appStore.currentProfile && appStore.currentBucket) {
+        bucketStatsComposable.invalidateStats(
+          appStore.currentProfile.id,
+          appStore.currentBucket
+        )
+      }
+
       // Success
       toast.completeToast(
         toastId,
@@ -2871,11 +3081,15 @@ async function reloadAllPages() {
 
 function navigateToRoot() {
   folderSizes.value.clear()
+  folderSizeIsEstimate.value.clear()
+  unknownFolders.value.clear()
   navigateAndLoad('')
 }
 
 function navigateToPath(index: number) {
   folderSizes.value.clear()
+  folderSizeIsEstimate.value.clear()
+  unknownFolders.value.clear()
   const parts = pathParts.value.slice(0, index + 1)
   const prefix = parts.join('/') + '/'
   navigateAndLoad(prefix)
@@ -2883,6 +3097,8 @@ function navigateToPath(index: number) {
 
 function navigateToFolder(folder: string) {
   folderSizes.value.clear()
+  folderSizeIsEstimate.value.clear()
+  unknownFolders.value.clear()
   navigateAndLoad(folder)
 }
 
@@ -2905,6 +3121,75 @@ function getFolderName(folder: string): string {
 function getFileName(key: string): string {
   const parts = key.split('/')
   return parts[parts.length - 1] || key
+}
+
+function formatLockDate(dateString: string): string {
+  return formatDate(dateString)
+}
+
+interface StorageClassInfo {
+  label: string
+  colorClass: string
+  bgClass: string
+  tooltip: string
+}
+
+function getStorageClassInfo(storageClass: string | undefined): StorageClassInfo | null {
+  if (!storageClass || storageClass === 'STANDARD') {
+    return null
+  }
+
+  const classMap: Record<string, StorageClassInfo> = {
+    STANDARD_IA: {
+      label: 'Standard-IA',
+      colorClass: 'text-amber-700 dark:text-amber-400',
+      bgClass: 'bg-amber-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassStandardIA')}`,
+    },
+    ONEZONE_IA: {
+      label: 'OneZone-IA',
+      colorClass: 'text-orange-700 dark:text-orange-400',
+      bgClass: 'bg-orange-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassOneZoneIA')}`,
+    },
+    INTELLIGENT_TIERING: {
+      label: 'Intelligent',
+      colorClass: 'text-green-700 dark:text-green-400',
+      bgClass: 'bg-green-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassIntelligent')}`,
+    },
+    GLACIER_IR: {
+      label: 'Glacier IR',
+      colorClass: 'text-sky-700 dark:text-sky-400',
+      bgClass: 'bg-sky-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassGlacierIR')}`,
+    },
+    GLACIER: {
+      label: 'Glacier',
+      colorClass: 'text-blue-700 dark:text-blue-400',
+      bgClass: 'bg-blue-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassGlacier')}`,
+    },
+    DEEP_ARCHIVE: {
+      label: 'Deep Archive',
+      colorClass: 'text-purple-700 dark:text-purple-400',
+      bgClass: 'bg-purple-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassDeepArchive')}`,
+    },
+    REDUCED_REDUNDANCY: {
+      label: 'Reduced',
+      colorClass: 'text-red-700 dark:text-red-400',
+      bgClass: 'bg-red-500/15',
+      tooltip: `${t('storageClass')}: ${t('storageClassReduced')}`,
+    },
+  }
+
+  return classMap[storageClass] || {
+    label: storageClass,
+    colorClass: 'text-gray-600 dark:text-gray-400',
+    bgClass: 'bg-gray-500/15',
+    tooltip: `${t('storageClass')}: ${storageClass}`,
+  }
 }
 
 function getFileExtension(filename: string): string {
@@ -3238,18 +3523,25 @@ function getFileIcon(key: string): { icon: any; colorClass: string } {
 }
 
 async function uploadFilesHandler() {
-  if (!appStore.currentProfile || !appStore.currentBucket) return
+  console.log('[Upload] uploadFilesHandler called')
+  if (!appStore.currentProfile || !appStore.currentBucket) {
+    console.log('[Upload] No profile or bucket, returning early')
+    return
+  }
 
   // Capture values to prevent null reference errors during async operations
   const profileId = appStore.currentProfile.id
   const bucket = appStore.currentBucket
   const prefix = appStore.currentPrefix
 
+  console.log('[Upload] Opening file dialog...')
   // Use Tauri dialog to select files
-  const selected = await open({
-    multiple: true,
-    title: t('upload'),
-  })
+  try {
+    const selected = await open({
+      multiple: true,
+      title: t('upload'),
+    })
+    console.log('[Upload] Dialog result:', selected)
 
   if (!selected) return // User cancelled
 
@@ -3305,6 +3597,10 @@ async function uploadFilesHandler() {
   toast.success(`Queued ${filePaths.length} file(s) for upload`)
 
   // Objects will be reloaded automatically when uploads complete
+  } catch (err) {
+    console.error('[Upload] Error opening dialog:', err)
+    toast.error('Failed to open file dialog')
+  }
 }
 
 async function createFolderHandler() {
@@ -3367,6 +3663,12 @@ async function loadAllObjects() {
       })
     }
 
+    // Invalidate bucket stats cache to force recalculation from updated index
+    bucketStatsComposable.invalidateStats(
+      appStore.currentProfile.id,
+      appStore.currentBucket
+    )
+
     // Success toast
     toast.completeToast(
       toastId,
@@ -3391,11 +3693,14 @@ async function downloadObject(key: string) {
 
     if (!filePath) return
 
-    const { getObject } = await import('../services/tauri')
-    const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-
-    await writeBinaryFile(filePath, new Uint8Array(response.content))
-    toast.success(t('fileDownloadedSuccess'))
+    // Use streaming download - no memory buffering, progress via events
+    await rustDownloadManager.startDownload(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      key,
+      filePath
+    )
+    // Success toast will be shown via download progress component
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -3497,22 +3802,20 @@ function handleFileDragStart(event: DragEvent, obj: S3Object) {
   }
 }
 
-async function handleFileDragEnd(event: DragEvent, obj: S3Object) {
+function handleFileDragEnd(_event: DragEvent, _obj: S3Object) {
   isDraggingFile.value = false
   draggingObject.value = null
 
-  // Check if the file was dropped outside the app window (to filesystem)
-  if (event.dataTransfer && event.dataTransfer.dropEffect !== 'none') {
-    // User dropped the file somewhere, trigger download
-    await downloadObjectDragDrop(obj.key)
-  }
+  // NOTE: Previously attempted to detect drops outside the app window using
+  // dropEffect !== 'none', but this is unreliable - it triggers even for
+  // drops inside the app. Drag-to-download disabled to prevent unexpected behavior.
+  // Users can download via double-click, download button, or context menu.
 }
 
-async function downloadObjectDragDrop(key: string) {
+async function _downloadObjectDragDrop(key: string) {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   const fileName = getFileName(key)
-  const toastId = toast.loading(`${t('downloading')} ${fileName}`)
 
   try {
     // Ask user where to save
@@ -3520,19 +3823,17 @@ async function downloadObjectDragDrop(key: string) {
       defaultPath: fileName,
     })
 
-    if (!filePath) {
-      toast.removeToast(toastId)
-      return
-    }
+    if (!filePath) return
 
-    // Download the file
-    const { getObject } = await import('../services/tauri')
-    const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-
-    await writeBinaryFile(filePath, new Uint8Array(response.content))
-    toast.completeToast(toastId, `${fileName} ${t('fileDownloadedSuccess')}`, 'success')
+    // Use streaming download - progress shown in download progress component
+    await rustDownloadManager.startDownload(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      key,
+      filePath
+    )
   } catch (e) {
-    toast.completeToast(toastId, `${t('downloadFailed')}: ${e}`, 'error')
+    toast.error(`${t('downloadFailed')}: ${e}`)
   }
 }
 
@@ -3548,18 +3849,14 @@ function handleFolderDragStart(event: DragEvent, folder: string) {
   }
 }
 
-async function handleFolderDragEnd(event: DragEvent, folder: string) {
+function handleFolderDragEnd(_event: DragEvent, _folder: string) {
   isDraggingFile.value = false
   draggingFolder.value = null
 
-  // Check if the folder was dropped outside the app window
-  if (event.dataTransfer && event.dataTransfer.dropEffect !== 'none') {
-    // User dropped the folder, trigger download of all contents
-    await downloadFolderDragDrop(folder)
-  }
+  // NOTE: Drag-to-download disabled - see handleFileDragEnd comment.
 }
 
-async function downloadFolderDragDrop(folder: string) {
+async function _downloadFolderDragDrop(folder: string) {
   if (!appStore.currentProfile || !appStore.currentBucket) return
 
   const folderName = getFolderName(folder)
@@ -3576,7 +3873,6 @@ async function downloadFolderDragDrop(folder: string) {
 
   try {
     // Get all objects in the folder
-    const { listObjects, getObject } = await import('../services/tauri')
     const allObjects: S3Object[] = []
     let continuationToken: string | undefined = undefined
 
@@ -3618,48 +3914,40 @@ async function downloadFolderDragDrop(folder: string) {
       return
     }
 
-    // Download all files
-    let successCount = 0
-    let failCount = 0
+    // Get base directory
+    const baseDir = folderPath.substring(0, folderPath.lastIndexOf('/'))
 
+    // Start streaming downloads for all files
+    // Each file gets its own progress tracking via download manager
+    toast.updateToast(toastId, {
+      message: `${t('downloading')} ${allObjects.length} files...`,
+    })
+
+    let startedCount = 0
     for (const obj of allObjects) {
       try {
         const fileName = getFileName(obj.key)
-        const response = await getObject(
-          appStore.currentProfile.id,
-          appStore.currentBucket,
-          obj.key
-        )
-
-        // Construct file path (base directory + filename)
-        const baseDir = folderPath.substring(0, folderPath.lastIndexOf('/'))
         const filePath = `${baseDir}/${fileName}`
 
-        await writeBinaryFile(filePath, new Uint8Array(response.content))
-        successCount++
-
-        // Update progress
-        const progress = Math.round(((successCount + failCount) / allObjects.length) * 100)
-        toast.updateToast(toastId, {
-          message: `${t('downloading')} ${successCount}/${allObjects.length} files`,
-          progress,
-        })
+        // Start streaming download (non-blocking, progress via events)
+        await rustDownloadManager.startDownload(
+          appStore.currentProfile.id,
+          appStore.currentBucket,
+          obj.key,
+          filePath
+        )
+        startedCount++
       } catch (e) {
-        logger.error(`Failed to download ${obj.key}:`, e)
-        failCount++
+        logger.error(`Failed to start download for ${obj.key}:`, e)
       }
     }
 
-    // Complete
-    if (failCount === 0) {
-      toast.completeToast(toastId, `Downloaded ${successCount} file(s) successfully!`, 'success')
-    } else {
-      toast.completeToast(
-        toastId,
-        `Downloaded ${successCount} file(s), ${failCount} failed`,
-        failCount < allObjects.length ? 'success' : 'error'
-      )
-    }
+    // Complete toast - individual progress shown in download progress component
+    toast.completeToast(
+      toastId,
+      `Started ${startedCount} download(s). Check progress panel.`,
+      'success'
+    )
   } catch (e) {
     logger.error('Folder download failed:', e)
   }
@@ -3667,9 +3955,10 @@ async function downloadFolderDragDrop(folder: string) {
 
 async function viewObject(obj: S3Object) {
   viewingObject.value = obj
+  viewModalLockStatus.value = null
   showViewModal.value = true
-  // Load versions, tags, and headers for the object
-  await Promise.all([loadViewModalVersions(), loadViewModalTags(), loadViewModalHeaders()])
+  // Load versions, tags, headers, and lock status for the object
+  await Promise.all([loadViewModalVersions(), loadViewModalTags(), loadViewModalHeaders(), loadViewModalLockStatus()])
 }
 
 // Image editor modal handlers - open editor in ObjectBrowser to avoid focus trap conflict
@@ -3911,6 +4200,25 @@ async function loadViewModalHeaders() {
   }
 }
 
+async function loadViewModalLockStatus() {
+  if (!viewingObject.value || !appStore.currentProfile || !appStore.currentBucket) return
+
+  loadingLockStatus.value = true
+  try {
+    const status = await objectLock.fetchLockStatus(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      viewingObject.value.key
+    )
+    viewModalLockStatus.value = status
+  } catch (e) {
+    logger.error('Failed to load lock status:', e)
+    viewModalLockStatus.value = null
+  } finally {
+    loadingLockStatus.value = false
+  }
+}
+
 function startEditHeaders() {
   editingHeaders.value = true
   if (viewModalHeaders.value) {
@@ -4046,6 +4354,11 @@ async function deleteFolderConfirm(folder: string) {
 
 // Handle file drop using Tauri's event system (NEW: Rust-managed uploads)
 async function handleFileDrop(paths: string[]) {
+  // Ignore empty drops (e.g., when dragging S3 objects within the app)
+  if (!paths || paths.length === 0) {
+    return
+  }
+
   if (!appStore.currentProfile || !appStore.currentBucket) {
     logger.error('No profile or bucket selected')
     return
@@ -4384,22 +4697,75 @@ async function downloadObjectVersion(version: ObjectVersion) {
 
     if (!filePath) return
 
-    // Note: You may need to update the backend to support downloading specific versions
-    // For now, this downloads the object with the version ID
-    // The backend's getObject function would need to accept an optional versionId parameter
-    const { getObject } = await import('../services/tauri')
-    const response = await getObject(
+    // Download specific version using versionId
+    await rustDownloadManager.startDownload(
       appStore.currentProfile.id,
       appStore.currentBucket,
-      version.key
+      version.key,
+      filePath,
+      version.version_id
     )
-
-    await writeBinaryFile(filePath, new Uint8Array(response.content))
-    toast.success(t('fileDownloadedSuccess'))
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
       message: `${t('downloadFailed')}: ${e}`,
+      confirmText: t('close'),
+      variant: 'destructive',
+    })
+  }
+}
+
+// Delete a specific version of an object (permanent deletion)
+async function deleteVersionConfirm(version: ObjectVersion) {
+  if (!appStore.currentProfile || !appStore.currentBucket) return
+
+  const confirmed = await dialog.confirm({
+    title: t('deleteVersion'),
+    message: t('deleteVersionConfirm').replace('{0}', version.version_id.substring(0, 12)),
+    confirmText: t('delete'),
+    cancelText: t('cancel'),
+    variant: 'destructive',
+  })
+
+  if (!confirmed) return
+
+  try {
+    await deleteObjectVersion(
+      appStore.currentProfile.id,
+      appStore.currentBucket,
+      version.key,
+      version.version_id
+    )
+
+    toast.success(t('versionDeleted'))
+
+    // Refresh the inline versions list
+    const key = version.key
+    if (inlineVersions.value.has(key)) {
+      const versions = inlineVersions.value.get(key)!.filter(
+        (v) => v.version_id !== version.version_id
+      )
+      if (versions.length <= 1) {
+        // If only one version left, collapse and remove
+        inlineVersions.value.delete(key)
+        expandedVersions.value.delete(key)
+      } else {
+        inlineVersions.value.set(key, versions)
+      }
+      inlineVersions.value = new Map(inlineVersions.value)
+      expandedVersions.value = new Set(expandedVersions.value)
+    }
+
+    // Also refresh view modal versions if open
+    if (viewModalVersions.value.length > 0) {
+      viewModalVersions.value = viewModalVersions.value.filter(
+        (v) => v.version_id !== version.version_id
+      )
+    }
+  } catch (e) {
+    await dialog.confirm({
+      title: t('errorOccurred'),
+      message: `${t('deleteFailed')}: ${e}`,
       confirmText: t('close'),
       variant: 'destructive',
     })
@@ -4489,7 +4855,9 @@ async function createFileHandler() {
 
 /**
  * Handle upload completion optimistically
- * Adds uploaded files to local store without reloading from S3
+ * Uses adaptive batching to reduce reactivity overhead with many uploads
+ * - ≤10 uploads: immediate add (best UX)
+ * - >10 uploads: batched with delay (better performance)
  */
 function handleUploadCompleted(event: Event) {
   const customEvent = event as CustomEvent<{
@@ -4501,20 +4869,15 @@ function handleUploadCompleted(event: Event) {
 
   const { bucket, key, size, contentType: _contentType } = customEvent.detail
 
-  logger.debug('[Upload] Object uploaded, adding optimistically:', key)
+  logger.debug('[Upload] Object uploaded, adding via batch system:', key)
 
-  // Only add if it's in the current bucket and current prefix
-  if (bucket !== appStore.currentBucket) {
-    logger.debug('[Upload] Skipping - different bucket')
-    return
-  }
-
+  // Only add if it's in the current prefix
   if (!key.startsWith(appStore.currentPrefix)) {
     logger.debug('[Upload] Skipping - different prefix')
     return
   }
 
-  // Add object optimistically
+  // Create S3Object for batch
   const newObj: S3Object = {
     key,
     size,
@@ -4524,8 +4887,8 @@ function handleUploadCompleted(event: Event) {
     is_folder: false,
   }
 
-  appStore.addObject(newObj)
-  logger.debug('[Upload] Object added optimistically:', key)
+  // Use adaptive batch system (handles bucket check internally)
+  optimisticBatch.addObjectToBatch(bucket, newObj)
 }
 
 // Copy/Paste functions
@@ -4922,61 +5285,30 @@ async function downloadSelectedItems() {
         ? folderPath.substring(0, folderPath.lastIndexOf('\\'))
         : folderPath
 
-    const { getObject } = await import('../services/tauri')
-    let successCount = 0
-    let failCount = 0
+    let startedCount = 0
 
-    // Create a persistent progress toast
-    const progressToastId = toast.loading(`${t('downloading')} 0/${selectedFiles.length}`)
-
+    // Start streaming downloads for all selected files
     for (const key of selectedFiles) {
       try {
         const fileName = getFileName(key)
         const filePath = `${directory}/${fileName}`
 
-        const response = await getObject(appStore.currentProfile.id, appStore.currentBucket, key)
-        await writeBinaryFile(filePath, new Uint8Array(response.content))
-        successCount++
-
-        // Update progress toast
-        const totalProcessed = successCount + failCount
-        const progress = Math.round((totalProcessed / selectedFiles.length) * 100)
-        toast.updateToast(progressToastId, {
-          message: `${t('downloading')} ${totalProcessed}/${selectedFiles.length}`,
-          progress,
-        })
+        // Start streaming download (non-blocking, progress via events)
+        await rustDownloadManager.startDownload(
+          appStore.currentProfile.id,
+          appStore.currentBucket,
+          key,
+          filePath
+        )
+        startedCount++
       } catch (e) {
-        logger.error(`Failed to download ${key}:`, e)
-        failCount++
-
-        // Update progress toast even on failure
-        const totalProcessed = successCount + failCount
-        const progress = Math.round((totalProcessed / selectedFiles.length) * 100)
-        toast.updateToast(progressToastId, {
-          message: `${t('downloading')} ${totalProcessed}/${selectedFiles.length}`,
-          progress,
-        })
+        logger.error(`Failed to start download for ${key}:`, e)
       }
     }
 
-    // Complete the progress toast
+    // Clear selection and show toast
     clearSelection()
-
-    if (failCount === 0) {
-      toast.completeToast(
-        progressToastId,
-        t('filesDownloadedSuccess').replace('{0}', String(successCount)),
-        'success'
-      )
-    } else {
-      toast.completeToast(
-        progressToastId,
-        t('downloadPartialSuccess')
-          .replace('{0}', String(successCount))
-          .replace('{1}', String(failCount)),
-        failCount < selectedFiles.length ? 'success' : 'error'
-      )
-    }
+    toast.success(`Started ${startedCount} download(s). Check progress panel.`)
   } catch (e) {
     await dialog.confirm({
       title: t('errorOccurred'),
@@ -5072,6 +5404,8 @@ onMounted(async () => {
   window.addEventListener('click', handleClickOutside)
   // Add upload completion listener for optimistic updates
   window.addEventListener('upload:object-completed', handleUploadCompleted)
+  // Setup clipboard paste listener for CTRL+V / CMD+V uploads
+  clipboardUpload.setupPasteListener()
 
   unlistenFileDrop = await listen('tauri://file-drop', (event) => {
     isDraggingOver.value = false
@@ -5093,6 +5427,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('click', handleClickOutside)
   window.removeEventListener('upload:object-completed', handleUploadCompleted)
+  clipboardUpload.cleanupPasteListener()
   if (unlistenFileDrop) unlistenFileDrop()
   if (unlistenFileDropHover) unlistenFileDropHover()
   if (unlistenFileDropCancelled) unlistenFileDropCancelled()

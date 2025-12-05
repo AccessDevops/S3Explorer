@@ -1,7 +1,13 @@
 <template>
   <div class="p-4 border-b border-white/10">
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-semibold mr-2">{{ t('connections') }}</h3>
+      <h3
+        class="text-lg font-semibold mr-2 cursor-pointer hover:text-primary transition-colors"
+        @click="showConnectionListModal = true"
+        v-tooltip="t('manageConnections')"
+      >
+        {{ t('connections') }}
+      </h3>
       <div class="flex items-center gap-3">
         <!-- Search bar for filtering profiles -->
         <div class="relative">
@@ -49,6 +55,7 @@
             : 'bg-white/5 hover:bg-white/10'
         "
         @click="selectProfile(profile)"
+        @mouseenter="handleProfileHover(profile)"
       >
         <div class="flex-1">
           <div class="font-medium">{{ profile.name }}</div>
@@ -106,6 +113,13 @@
         </div>
       </div>
     </div>
+
+    <!-- Connection List Modal -->
+    <ConnectionListModal
+      v-model:open="showConnectionListModal"
+      @edit="editProfileHandler"
+      @create="openAddModal"
+    />
 
     <!-- Add/Edit Profile Modal -->
     <Dialog v-model:open="showAddModal">
@@ -266,7 +280,8 @@ import { ref, reactive, computed, watch } from 'vue'
 import { useAppStore } from '../stores/app'
 import { useI18n } from '../composables/useI18n'
 import { useDialog } from '../composables/useDialog'
-import { testConnection } from '../services/tauri'
+import { testConnection, warmupProfileCache } from '../services/tauri'
+import { logger } from '../utils/logger'
 import type { Profile, TestConnectionResponse } from '../types'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
@@ -280,11 +295,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { validateEndpoint, validateRegion } from '../utils/validators'
+import ConnectionListModal from './ConnectionListModal.vue'
 
 const appStore = useAppStore()
 const { t } = useI18n()
 const dialog = useDialog()
 const showAddModal = ref(false)
+const showConnectionListModal = ref(false)
 const editingProfile = ref<Profile | null>(null)
 const testResult = ref<TestConnectionResponse | null>(null)
 const isTesting = ref(false)
@@ -292,14 +309,17 @@ const isTesting = ref(false)
 // Search query for filtering profiles
 const profileSearchQuery = ref('')
 
-// Filtered profiles based on search query
+// Filtered profiles based on search query (excluding disabled profiles)
 const filteredProfiles = computed(() => {
+  // First filter out disabled profiles
+  const enabledProfiles = appStore.profiles.filter(p => p.enabled !== false)
+
   if (!profileSearchQuery.value.trim()) {
-    return appStore.profiles
+    return enabledProfiles
   }
 
   const query = profileSearchQuery.value.toLowerCase()
-  return appStore.profiles.filter(profile =>
+  return enabledProfiles.filter(profile =>
     profile.name.toLowerCase().includes(query)
   )
 })
@@ -481,5 +501,33 @@ async function deleteProfileConfirm(profile: Profile) {
 function enablePathStyle() {
   formData.path_style = true
   testResult.value = null
+}
+
+// Cache warmup on profile hover - debounced to avoid spam
+let warmupTimeout: ReturnType<typeof setTimeout> | null = null
+const warmedUpProfiles = new Set<string>()
+
+function handleProfileHover(profile: Profile) {
+  // Skip if already current profile or already warmed up in this session
+  if (appStore.currentProfile?.id === profile.id || warmedUpProfiles.has(profile.id)) {
+    return
+  }
+
+  // Clear previous timeout
+  if (warmupTimeout) {
+    clearTimeout(warmupTimeout)
+  }
+
+  // Debounce: only warmup if user hovers for 150ms
+  warmupTimeout = setTimeout(async () => {
+    try {
+      await warmupProfileCache(profile.id)
+      warmedUpProfiles.add(profile.id)
+      logger.debug(`[CacheWarmup] Preloaded cache for profile: ${profile.name}`)
+    } catch (e) {
+      // Non-critical - silent fail
+      logger.warn(`[CacheWarmup] Failed to warmup profile ${profile.name}`, e)
+    }
+  }, 150)
 }
 </script>

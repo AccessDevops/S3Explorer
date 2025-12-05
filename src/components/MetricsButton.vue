@@ -1,27 +1,26 @@
 <template>
   <div>
-    <Tooltip :text="t('metrics')" side="top">
-      <Button
-        variant="ghost"
-        class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
-        @click="showMetricsModal = true"
+    <Button
+      variant="ghost"
+      class="w-full justify-center text-white/70 hover:text-white hover:bg-white/10"
+      @click="showMetricsModal = true"
+      v-tooltip="t('metrics')"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M3 3v18h18" />
-          <path d="m19 9-5 5-4-4-3 3" />
-        </svg>
-      </Button>
-    </Tooltip>
+        <path d="M3 3v18h18" />
+        <path d="m19 9-5 5-4-4-3 3" />
+      </svg>
+    </Button>
 
     <!-- Metrics Dashboard Modal -->
     <Dialog v-model:open="showMetricsModal">
@@ -193,16 +192,16 @@
         <div class="flex-1 overflow-y-auto py-4 space-y-6">
           <!-- KPI Cards -->
           <div class="grid grid-cols-5 gap-4">
-            <!-- Today's Requests -->
+            <!-- Total Requests (for selected period) -->
             <div class="bg-muted/50 rounded-lg p-4">
-              <div class="text-2xl font-bold">{{ totalRequestsToday.toLocaleString() }}</div>
-              <div class="text-sm text-muted-foreground">{{ t('metricsToday') }}</div>
+              <div class="text-2xl font-bold">{{ totalRequests.toLocaleString() }}</div>
+              <div class="text-sm text-muted-foreground">{{ t('metricsRequests') }}</div>
             </div>
 
-            <!-- Cost Today -->
+            <!-- Cost for selected period -->
             <div class="bg-muted/50 rounded-lg p-4">
-              <div class="text-2xl font-bold">${{ estimatedCostToday.toFixed(4) }}</div>
-              <div class="text-sm text-muted-foreground">{{ t('metricsCostToday') }}</div>
+              <div class="text-2xl font-bold">${{ estimatedCost.toFixed(4) }}</div>
+              <div class="text-sm text-muted-foreground">{{ t('metricsCost') }}</div>
             </div>
 
             <!-- Cost Month Projection -->
@@ -211,7 +210,7 @@
               <div class="text-sm text-muted-foreground">{{ t('metricsCostMonth') }}</div>
             </div>
 
-            <!-- Requests per Hour -->
+            <!-- Requests per Hour (average) -->
             <div class="bg-muted/50 rounded-lg p-4">
               <div class="text-2xl font-bold">{{ requestsPerHour }}/h</div>
               <div class="text-sm text-muted-foreground">{{ t('metricsPerHour') }}</div>
@@ -222,12 +221,12 @@
               <div
                 class="text-2xl font-bold"
                 :class="{
-                  'text-green-500': errorRateToday < 1,
-                  'text-yellow-500': errorRateToday >= 1 && errorRateToday < 5,
-                  'text-red-500': errorRateToday >= 5,
+                  'text-green-500': errorRate < 1,
+                  'text-yellow-500': errorRate >= 1 && errorRate < 5,
+                  'text-red-500': errorRate >= 5,
                 }"
               >
-                {{ errorRateToday.toFixed(1) }}%
+                {{ errorRate.toFixed(1) }}%
               </div>
               <div class="text-sm text-muted-foreground">{{ t('metricsErrorRate') }}</div>
             </div>
@@ -259,7 +258,7 @@
 
             <!-- Cache Hit Rate Gauge -->
             <div class="border rounded-lg p-4">
-              <h3 class="font-medium mb-4">{{ t('metricsCacheEfficiency') }}</h3>
+              <h3 class="font-medium mb-4">{{ t('metricsIndexEfficiency') }}</h3>
               <div class="flex flex-col items-center justify-center h-32">
                 <!-- Circular gauge -->
                 <div class="relative w-24 h-24">
@@ -298,31 +297,79 @@
               </div>
             </div>
 
-            <!-- Hourly Distribution -->
+            <!-- Distribution Chart (Hourly/Daily/Weekly based on period) -->
             <div class="border rounded-lg p-4">
-              <h3 class="font-medium mb-4">{{ t('metricsHourly') }}</h3>
-              <div class="flex items-end h-28 gap-0.5">
-                <Tooltip
-                  v-for="hour in hourlyData"
-                  :key="hour.hour"
-                  :text="`${hour.hour}:00 - ${hour.count} ${t('metricsRequests')}`"
-                  side="top"
-                >
-                  <div class="flex-1 h-full flex flex-col justify-end items-center">
-                    <div
-                      class="w-full bg-primary/80 rounded-t transition-all min-h-[2px]"
-                      :style="{ height: `${Math.max(2, (hour.count / maxHourlyCount) * 100)}%` }"
-                    ></div>
-                  </div>
-                </Tooltip>
-              </div>
-              <div class="flex justify-between mt-1 text-[10px] text-muted-foreground">
-                <span>0h</span>
-                <span>6h</span>
-                <span>12h</span>
-                <span>18h</span>
-                <span>24h</span>
-              </div>
+              <h3 class="font-medium mb-4">{{ distributionChartTitle }}</h3>
+
+              <!-- Hourly Distribution (1 day) -->
+              <template v-if="selectedPeriod === 1">
+                <div class="flex items-end h-28 gap-0.5">
+                  <Tooltip
+                    v-for="hour in hourlyData"
+                    :key="hour.hour"
+                    :text="`${hour.hour}:00 - ${hour.count} ${t('metricsRequests')}`"
+                    side="top"
+                  >
+                    <div class="flex-1 h-full flex flex-col justify-end items-center">
+                      <div
+                        class="w-full bg-primary/80 rounded-t transition-all min-h-[2px]"
+                        :style="{ height: `${Math.max(2, (hour.count / maxHourlyCount) * 100)}%` }"
+                      ></div>
+                    </div>
+                  </Tooltip>
+                </div>
+                <div class="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                  <span>0h</span>
+                  <span>6h</span>
+                  <span>12h</span>
+                  <span>18h</span>
+                  <span>24h</span>
+                </div>
+              </template>
+
+              <!-- Daily Distribution (7 days) -->
+              <template v-else-if="selectedPeriod === 7">
+                <div class="flex items-end h-28 gap-1">
+                  <Tooltip
+                    v-for="day in dailyData"
+                    :key="day.date"
+                    :text="`${day.dayLabel} - ${day.count} ${t('metricsRequests')}`"
+                    side="top"
+                  >
+                    <div class="flex-1 h-full flex flex-col justify-end items-center">
+                      <div
+                        class="w-full bg-primary/80 rounded-t transition-all min-h-[2px]"
+                        :style="{ height: `${Math.max(2, (day.count / maxDailyCount) * 100)}%` }"
+                      ></div>
+                    </div>
+                  </Tooltip>
+                </div>
+                <div class="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                  <span v-for="day in dailyData" :key="day.date">{{ day.dayLabel }}</span>
+                </div>
+              </template>
+
+              <!-- Weekly Distribution (30 days) -->
+              <template v-else>
+                <div class="flex items-end h-28 gap-2">
+                  <Tooltip
+                    v-for="week in weeklyData"
+                    :key="week.weekStart"
+                    :text="`${week.weekLabel} - ${week.count} ${t('metricsRequests')}`"
+                    side="top"
+                  >
+                    <div class="flex-1 h-full flex flex-col justify-end items-center">
+                      <div
+                        class="w-full bg-primary/80 rounded-t transition-all min-h-[2px]"
+                        :style="{ height: `${Math.max(2, (week.count / maxWeeklyCount) * 100)}%` }"
+                      ></div>
+                    </div>
+                  </Tooltip>
+                </div>
+                <div class="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                  <span v-for="week in weeklyData" :key="week.weekStart">{{ week.weekLabel }}</span>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -469,7 +516,6 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMetrics, initMetricsListener } from '@/composables/useMetrics'
 import { useCacheMetrics } from '@/composables/useCacheMetrics'
-import { metricsStorage } from '@/services/metricsStorage'
 import { useI18n } from '@/composables/useI18n'
 import { useToast } from '@/composables/useToast'
 import { useSettingsStore } from '@/stores/settings'
@@ -482,8 +528,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Tooltip } from '@/components/ui/tooltip'
-import type { OperationStats, ErrorStats, BucketUsageStats, HourlyStats, S3Provider, CacheSummary } from '@/types/metrics'
+import { Tooltip } from '@/components/ui/tooltip' // Used for Tooltip component inside modal
+import type { OperationStats, ErrorStats, BucketUsageStats, HourlyStats, DailyDistribution, WeeklyDistribution, S3Provider, CacheSummary, DailyStats } from '@/types/metrics'
 import { OPERATION_CATEGORY_MAP, PROVIDER_INFO } from '@/types/metrics'
 
 const { t } = useI18n()
@@ -507,11 +553,14 @@ const operationData = ref<OperationStats[]>([])
 const errorData = ref<ErrorStats[]>([])
 const topBuckets = ref<BucketUsageStats[]>([])
 const hourlyData = ref<HourlyStats[]>(createEmptyHourlyData())
+const dailyData = ref<DailyDistribution[]>([])
+const weeklyData = ref<WeeklyDistribution[]>([])
 const storageInfo = ref<{ requestCount: number; oldestDate: string | null }>({
   requestCount: 0,
   oldestDate: null,
 })
 const cacheSummary = ref<CacheSummary | null>(null)
+const periodStats = ref<DailyStats | null>(null)
 
 // Period options
 const periods = [
@@ -520,14 +569,22 @@ const periods = [
   { days: 30, label: '30d' },
 ]
 
-// Computed from useMetrics
-const totalRequestsToday = computed(() => metrics.totalRequestsToday.value)
-const errorRateToday = computed(() => metrics.errorRateToday.value)
-const requestsPerHour = computed(() => metrics.requestsPerHour.value)
+// Computed from periodStats (filtered by selected period)
+const totalRequests = computed(() => periodStats.value?.totalRequests ?? 0)
+const errorRate = computed(() => {
+  if (!periodStats.value || periodStats.value.totalRequests === 0) return 0
+  return (periodStats.value.failedRequests / periodStats.value.totalRequests) * 100
+})
+const requestsPerHour = computed(() => {
+  if (!periodStats.value || periodStats.value.totalRequests === 0) return 0
+  // Calculate hours in the selected period
+  const hoursInPeriod = selectedPeriod.value * 24
+  return Math.round(periodStats.value.totalRequests / hoursInPeriod)
+})
 
-// Calculate cost today using selected provider pricing (not hardcoded AWS pricing)
-const estimatedCostToday = computed(() => {
-  const stats = metrics.todayStats.value
+// Calculate cost for selected period using selected provider pricing
+const estimatedCost = computed(() => {
+  const stats = periodStats.value
   if (!stats) return 0
 
   const pricing = currentPricing.value
@@ -541,16 +598,16 @@ const estimatedCostToday = computed(() => {
 
 // Calculate monthly projection using selected provider pricing
 const estimatedCostMonth = computed(() => {
+  // Project based on daily average from the selected period
+  const dailyAvgCost = estimatedCost.value / selectedPeriod.value
   const today = new Date()
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-  const dayOfMonth = today.getDate()
-  const dailyCost = estimatedCostToday.value
-  return (dailyCost / Math.max(dayOfMonth, 1)) * daysInMonth
+  return dailyAvgCost * daysInMonth
 })
 
-// Category data for chart
+// Category data for chart (uses periodStats)
 const categoryData = computed(() => {
-  const stats = metrics.todayStats.value
+  const stats = periodStats.value
   if (!stats || stats.totalRequests === 0) return []
 
   const total = stats.totalRequests
@@ -582,10 +639,27 @@ const categoryData = computed(() => {
   ].filter((c) => c.count > 0)
 })
 
-// Max hourly count for chart scaling
+// Max counts for chart scaling
 const maxHourlyCount = computed(() => {
   if (hourlyData.value.length === 0) return 1
   return Math.max(...hourlyData.value.map((h) => h.count), 1)
+})
+
+const maxDailyCount = computed(() => {
+  if (dailyData.value.length === 0) return 1
+  return Math.max(...dailyData.value.map((d) => d.count), 1)
+})
+
+const maxWeeklyCount = computed(() => {
+  if (weeklyData.value.length === 0) return 1
+  return Math.max(...weeklyData.value.map((w) => w.count), 1)
+})
+
+// Chart title based on period
+const distributionChartTitle = computed(() => {
+  if (selectedPeriod.value === 1) return t('metricsHourly')
+  if (selectedPeriod.value === 7) return t('metricsDaily')
+  return t('metricsWeekly')
 })
 
 // Load data when modal opens
@@ -593,8 +667,6 @@ watch(
   showMetricsModal,
   async (isOpen) => {
     if (isOpen) {
-      // Ensure metrics storage is initialized before loading
-      await metricsStorage.init().catch(() => {})
       await loadData()
     }
   },
@@ -630,23 +702,38 @@ function handleClickOutside(event: MouseEvent) {
 async function loadData() {
   isLoading.value = true
   try {
-    // Refresh today stats first (needed for KPI cards)
-    await metrics.refreshTodayStats()
-
-    // Load main metrics data
-    const [ops, errors, buckets, hourly, storage] = await Promise.all([
+    // Load main metrics data including period stats
+    const [period, ops, errors, buckets, storage] = await Promise.all([
+      metrics.getPeriodStats(selectedPeriod.value),
       metrics.getOperationStats(selectedPeriod.value),
       metrics.getErrorStats(selectedPeriod.value),
       metrics.getTopBuckets(selectedPeriod.value, 5),
-      metrics.getHourlyStats(),
       metrics.getStorageInfo(),
     ])
 
+    periodStats.value = period
     operationData.value = ops
     errorData.value = errors
     topBuckets.value = buckets
-    hourlyData.value = hourly
     storageInfo.value = storage
+
+    // Load appropriate distribution data based on selected period
+    if (selectedPeriod.value === 1) {
+      // 1 day: hourly distribution
+      hourlyData.value = await metrics.getHourlyStatsPeriod(1)
+      dailyData.value = []
+      weeklyData.value = []
+    } else if (selectedPeriod.value === 7) {
+      // 7 days: daily distribution
+      dailyData.value = await metrics.getDailyDistribution(7)
+      hourlyData.value = []
+      weeklyData.value = []
+    } else {
+      // 30 days: weekly distribution
+      weeklyData.value = await metrics.getWeeklyDistribution(30)
+      hourlyData.value = []
+      dailyData.value = []
+    }
 
     // Load cache summary separately (optional, won't break main data if it fails)
     try {

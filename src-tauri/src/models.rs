@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::Crypto;
 use crate::errors::AppError;
 
+/// Helper function for serde default
+fn default_true() -> bool {
+    true
+}
+
 /// S3 connection profile (decrypted, used at runtime)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
@@ -14,6 +19,8 @@ pub struct Profile {
     pub secret_key: String,
     pub session_token: Option<String>,
     pub path_style: bool, // Force path-style addressing
+    #[serde(default = "default_true")]
+    pub enabled: bool, // Whether this profile is visible in the sidebar
 }
 
 /// S3 connection profile with encrypted credentials (stored on disk)
@@ -33,6 +40,9 @@ pub struct EncryptedProfile {
     /// Version flag to detect encrypted vs plaintext profiles
     #[serde(default)]
     pub encrypted: bool,
+    /// Whether this profile is visible in the sidebar
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 impl Profile {
@@ -48,6 +58,7 @@ impl Profile {
             session_token_encrypted: crypto.encrypt_option(self.session_token.as_deref())?,
             path_style: self.path_style,
             encrypted: true,
+            enabled: self.enabled,
         })
     }
 }
@@ -80,6 +91,7 @@ impl EncryptedProfile {
             secret_key,
             session_token,
             path_style: self.path_style,
+            enabled: self.enabled,
         })
     }
 
@@ -113,7 +125,7 @@ pub struct Bucket {
 }
 
 /// S3 Object information
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3Object {
     pub key: String,
     pub size: i64,
@@ -121,6 +133,19 @@ pub struct S3Object {
     pub storage_class: Option<String>,
     pub e_tag: Option<String>,
     pub is_folder: bool,
+}
+
+/// Object Lock status information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectLockStatus {
+    /// Whether the object is locked (either by retention or legal hold)
+    pub is_locked: bool,
+    /// Retention mode: "GOVERNANCE" or "COMPLIANCE"
+    pub retention_mode: Option<String>,
+    /// Retention expiration date (ISO 8601 format)
+    pub retain_until_date: Option<String>,
+    /// Whether legal hold is enabled
+    pub legal_hold: bool,
 }
 
 /// Request to list objects
@@ -280,6 +305,31 @@ pub enum UploadStatus {
     Cancelled,
 }
 
+/// Download progress event payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadProgressEvent {
+    pub download_id: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub downloaded_bytes: u64,
+    pub percentage: f64,
+    pub status: DownloadStatus,
+    pub error: Option<String>,
+    pub bytes_per_second: Option<f64>,
+}
+
+/// Download status enum
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadStatus {
+    Pending,
+    Starting,
+    Downloading,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
 /// S3 Object Tag
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectTag {
@@ -375,6 +425,7 @@ pub enum S3Operation {
     // Bucket operations
     ListBuckets,
     CreateBucket,
+    DeleteBucket,
     GetBucketAcl,
     // Object listing
     ListObjectsV2,
@@ -395,6 +446,8 @@ pub enum S3Operation {
     GetObjectTagging,
     PutObjectTagging,
     DeleteObjectTagging,
+    // Object Lock
+    GetObjectLockStatus,
     // Local operations (no S3 API call)
     GeneratePresignedUrl,
 }
@@ -572,4 +625,354 @@ pub fn categorize_s3_error(error_str: &str) -> S3ErrorCategory {
     } else {
         S3ErrorCategory::Unknown
     }
+}
+
+// ============================================================================
+// Index Database Models
+// ============================================================================
+
+/// Objet indexé dans SQLite (enrichi par rapport à S3Object)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedObject {
+    pub id: Option<i64>,
+    pub profile_id: String,
+    pub bucket_name: String,
+    pub key: String,
+    pub version_id: Option<String>,
+
+    // Propriétés S3
+    pub size: i64,
+    pub last_modified: Option<String>,
+    pub e_tag: Option<String>,
+    pub storage_class: String,
+
+    // Propriétés optionnelles
+    pub owner_id: Option<String>,
+    pub owner_display_name: Option<String>,
+    pub checksum_algorithm: Option<String>,
+
+    // Glacier/Archive
+    pub restore_status: Option<String>,
+    pub restore_expiry_date: Option<String>,
+
+    // Métadonnées enrichies (HeadObject)
+    pub content_type: Option<String>,
+    pub server_side_encryption: Option<String>,
+    pub sse_kms_key_id: Option<String>,
+
+    // Colonnes pré-calculées
+    pub parent_prefix: String,
+    pub basename: String,
+    pub extension: Option<String>,
+    pub depth: i32,
+    pub is_folder: bool,
+
+    // Tracking
+    pub indexed_at: i64,
+    pub metadata_loaded: bool,
+}
+
+impl IndexedObject {
+    /// Créer un IndexedObject à partir d'un S3Object
+    pub fn from_s3_object(s3_obj: &S3Object, profile_id: &str, bucket_name: &str) -> Self {
+        let key = &s3_obj.key;
+        let parent_prefix = Self::extract_parent_prefix(key);
+        let basename = Self::extract_basename(key);
+        let extension = Self::extract_extension(key);
+        let depth = key.matches('/').count() as i32;
+
+        Self {
+            id: None,
+            profile_id: profile_id.to_string(),
+            bucket_name: bucket_name.to_string(),
+            key: key.clone(),
+            version_id: None,
+            size: s3_obj.size,
+            last_modified: s3_obj.last_modified.clone(),
+            e_tag: s3_obj.e_tag.clone(),
+            storage_class: s3_obj
+                .storage_class
+                .clone()
+                .unwrap_or_else(|| "STANDARD".to_string()),
+            owner_id: None,
+            owner_display_name: None,
+            checksum_algorithm: None,
+            restore_status: None,
+            restore_expiry_date: None,
+            content_type: None,
+            server_side_encryption: None,
+            sse_kms_key_id: None,
+            parent_prefix,
+            basename,
+            extension,
+            depth,
+            is_folder: s3_obj.is_folder,
+            indexed_at: chrono::Utc::now().timestamp_millis(),
+            metadata_loaded: false,
+        }
+    }
+
+    /// Extraire le préfixe parent d'une clé
+    /// "folder/subfolder/file.txt" -> "folder/subfolder/"
+    /// "file.txt" -> ""
+    pub fn extract_parent_prefix(key: &str) -> String {
+        if let Some(pos) = key.rfind('/') {
+            key[..=pos].to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    /// Extraire le nom de base d'une clé
+    /// "folder/subfolder/file.txt" -> "file.txt"
+    pub fn extract_basename(key: &str) -> String {
+        if let Some(pos) = key.rfind('/') {
+            key[pos + 1..].to_string()
+        } else {
+            key.to_string()
+        }
+    }
+
+    /// Extraire l'extension d'une clé
+    /// "file.txt" -> Some("txt")
+    /// "file" -> None
+    /// "folder/" -> None
+    pub fn extract_extension(key: &str) -> Option<String> {
+        let basename = Self::extract_basename(key);
+        if basename.ends_with('/') || !basename.contains('.') {
+            return None;
+        }
+        basename.rsplit('.').next().map(|s| s.to_lowercase())
+    }
+}
+
+/// Statut d'un préfixe (dossier) dans l'index
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PrefixStatus {
+    pub id: Option<i64>,
+    pub profile_id: String,
+    pub bucket_name: String,
+    pub prefix: String,
+
+    pub is_complete: bool,
+    pub objects_count: i64,
+    pub total_size: i64,
+
+    // Pour reprise d'indexation
+    pub continuation_token: Option<String>,
+    pub last_indexed_key: Option<String>,
+
+    pub last_sync_started_at: Option<i64>,
+    pub last_sync_completed_at: Option<i64>,
+}
+
+/// Informations sur un bucket (configuration détectée)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BucketInfo {
+    pub id: Option<i64>,
+    pub profile_id: String,
+    pub bucket_name: String,
+
+    pub versioning_enabled: Option<bool>,
+    pub encryption_enabled: Option<bool>,
+    pub default_encryption: Option<String>,
+
+    pub acl: Option<String>,
+    pub acl_cached_at: Option<i64>,
+
+    pub region: Option<String>,
+
+    // Tracking indexation initiale
+    pub initial_index_requests: i32,
+    pub initial_index_completed: bool,
+
+    pub last_checked_at: Option<i64>,
+}
+
+/// Résultat de l'indexation initiale d'un bucket
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitialIndexResult {
+    pub total_indexed: u64,
+    pub is_complete: bool,
+    pub requests_made: u32,
+    pub continuation_token: Option<String>,
+    pub last_key: Option<String>,
+    pub total_size: i64,
+    pub error: Option<String>,
+}
+
+/// Statistiques d'un préfixe (pour l'affichage UI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrefixStats {
+    pub prefix: String,
+    pub objects_count: i64,
+    pub total_size: i64,
+    pub is_complete: bool,
+    pub last_sync_at: Option<i64>,
+}
+
+/// Statistiques d'un bucket (calculées depuis l'index)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketIndexStats {
+    pub bucket_name: String,
+    pub total_objects: i64,
+    pub total_size: i64,
+    pub is_complete: bool,
+    pub storage_class_breakdown: Vec<StorageClassStats>,
+    pub last_indexed_at: Option<i64>,
+    /// Estimated size of the index data for this bucket (in bytes)
+    pub estimated_index_size: i64,
+}
+
+/// Statistiques par classe de stockage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageClassStats {
+    pub storage_class: String,
+    pub object_count: i64,
+    pub total_size: i64,
+}
+
+/// Configuration de l'indexation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexingConfig {
+    pub max_initial_requests: u32,
+    pub batch_size: i32,
+    pub stale_ttl_hours: u32,
+}
+
+impl Default for IndexingConfig {
+    fn default() -> Self {
+        Self {
+            max_initial_requests: 20,
+            batch_size: 1000,
+            stale_ttl_hours: 24,
+        }
+    }
+}
+
+/// Statut d'indexation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexStatus {
+    Starting,
+    Indexing,
+    Completed,
+    Partial,
+    Failed,
+    Cancelled,
+}
+
+/// Événement de progression d'indexation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexProgressEvent {
+    pub profile_id: String,
+    pub bucket_name: String,
+    pub objects_indexed: u64,
+    pub requests_made: u32,
+    pub max_requests: u32,
+    pub is_complete: bool,
+    pub status: IndexStatus,
+    pub error: Option<String>,
+}
+
+/// Métadonnées d'un index de bucket (pour listing dans Settings)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketIndexMetadata {
+    pub bucket_name: String,
+    pub total_objects: i64,
+    pub total_size: i64,
+    pub is_complete: bool,
+    pub last_indexed_at: Option<i64>,
+    /// Estimated size of the index data for this bucket (in bytes)
+    pub estimated_index_size: i64,
+}
+
+// ============================================================================
+// Bucket Configuration Types (Read-Only)
+// ============================================================================
+
+/// Bucket Policy (JSON document)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketPolicyResponse {
+    pub policy: Option<String>,
+    pub error: Option<String>,
+}
+
+/// CORS Rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CorsRule {
+    pub allowed_headers: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    pub expose_headers: Vec<String>,
+    pub max_age_seconds: Option<i32>,
+}
+
+/// Bucket CORS Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketCorsResponse {
+    pub rules: Vec<CorsRule>,
+    pub error: Option<String>,
+}
+
+/// Lifecycle Transition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleTransition {
+    pub days: Option<i32>,
+    pub date: Option<String>,
+    pub storage_class: String,
+}
+
+/// Lifecycle Rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleRule {
+    pub id: Option<String>,
+    pub status: String,
+    pub filter_prefix: Option<String>,
+    pub expiration_days: Option<i32>,
+    pub expiration_date: Option<String>,
+    pub transitions: Vec<LifecycleTransition>,
+    pub noncurrent_version_expiration_days: Option<i32>,
+    pub abort_incomplete_multipart_days: Option<i32>,
+}
+
+/// Bucket Lifecycle Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketLifecycleResponse {
+    pub rules: Vec<LifecycleRule>,
+    pub error: Option<String>,
+}
+
+/// Bucket Versioning Status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketVersioningResponse {
+    pub status: Option<String>,
+    pub mfa_delete: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Bucket Encryption Rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketEncryptionRule {
+    pub sse_algorithm: String,
+    pub kms_master_key_id: Option<String>,
+    pub bucket_key_enabled: Option<bool>,
+}
+
+/// Bucket Encryption Configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketEncryptionResponse {
+    pub rules: Vec<BucketEncryptionRule>,
+    pub error: Option<String>,
+}
+
+/// Complete Bucket Configuration (all settings combined)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BucketConfigurationResponse {
+    pub policy: BucketPolicyResponse,
+    pub acl: String,
+    pub cors: BucketCorsResponse,
+    pub lifecycle: BucketLifecycleResponse,
+    pub versioning: BucketVersioningResponse,
+    pub encryption: BucketEncryptionResponse,
 }

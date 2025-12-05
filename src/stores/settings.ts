@@ -21,7 +21,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const maxConcurrentUploads = ref(10)
   const multipartThresholdMB = ref(20) // MB - files larger than this use multipart upload
   const indexValidityHours = ref(8) // hours - index older than this is considered expired
-  const indexAutoBuildThreshold = ref(12000) // objects - buckets with fewer objects auto-build index
+  const maxInitialIndexRequests = ref(20) // requests - max S3 requests for initial bucket indexing (1-100)
   const bucketStatsCacheTTLHours = ref(24) // hours - bucket stats cache TTL (default: 24h)
   const previewWarningLimitMB = ref(10) // MB - files larger than this show warning before loading
   const previewMaxLimitMB = ref(80) // MB - files larger than this cannot be previewed
@@ -30,6 +30,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // Metrics pricing settings
   const metricsProvider = ref<S3Provider>('aws')
   const customPricing = ref<S3Pricing>({ ...PROVIDER_PRICING.custom })
+
+  // Force S3 Search - bypass local index (not persisted, temporary per session)
+  const forceS3Search = ref(false)
 
   // Track system theme preference reactively
   const systemPrefersDark = ref(false)
@@ -102,11 +105,11 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     }
 
-    const savedIndexAutoBuildThreshold = localStorage.getItem('app-indexAutoBuildThreshold')
-    if (savedIndexAutoBuildThreshold) {
-      const threshold = parseInt(savedIndexAutoBuildThreshold, 10)
-      if (!isNaN(threshold) && threshold >= 100 && threshold <= 100000) {
-        indexAutoBuildThreshold.value = threshold
+    const savedMaxInitialIndexRequests = localStorage.getItem('app-maxInitialIndexRequests')
+    if (savedMaxInitialIndexRequests) {
+      const requests = parseInt(savedMaxInitialIndexRequests, 10)
+      if (!isNaN(requests) && requests >= 1 && requests <= 100) {
+        maxInitialIndexRequests.value = requests
       }
     }
 
@@ -216,13 +219,13 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('app-indexValidityHours', String(hours))
   }
 
-  // Save index auto-build threshold to localStorage
-  const setIndexAutoBuildThreshold = (threshold: number) => {
-    if (isNaN(threshold) || threshold < 100 || threshold > 100000) {
+  // Save max initial index requests to localStorage
+  const setMaxInitialIndexRequests = (requests: number) => {
+    if (isNaN(requests) || requests < 1 || requests > 100) {
       return // Silently ignore invalid values
     }
-    indexAutoBuildThreshold.value = threshold
-    localStorage.setItem('app-indexAutoBuildThreshold', String(threshold))
+    maxInitialIndexRequests.value = requests
+    localStorage.setItem('app-maxInitialIndexRequests', String(requests))
   }
 
   // Save bucket stats cache TTL to localStorage
@@ -301,7 +304,7 @@ export const useSettingsStore = defineStore('settings', () => {
     maxConcurrentUploads,
     multipartThresholdMB,
     indexValidityHours,
-    indexAutoBuildThreshold,
+    maxInitialIndexRequests,
     bucketStatsCacheTTLHours,
     previewWarningLimitMB,
     previewMaxLimitMB,
@@ -314,7 +317,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setMaxConcurrentUploads,
     setMultipartThresholdMB,
     setIndexValidityHours,
-    setIndexAutoBuildThreshold,
+    setMaxInitialIndexRequests,
     setBucketStatsCacheTTLHours,
     setPreviewWarningLimitMB,
     setPreviewMaxLimitMB,
@@ -326,5 +329,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setMetricsProvider,
     setCustomPricing,
     getCurrentPricing,
+    // Force S3 Search
+    forceS3Search,
   }
 })

@@ -108,6 +108,17 @@ export const useAppStore = defineStore('app', () => {
       isLoading.value = true
       error.value = null
       await tauriService.deleteProfile(profileId)
+
+      // Cleanup backend cache for this profile (DatabaseManager + IndexManager)
+      // This frees SQLite connections and memory immediately instead of waiting for LRU eviction
+      try {
+        await tauriService.cleanupProfileCache(profileId)
+        logger.debug(`[Cache] Cleaned up cache for deleted profile: ${profileId}`)
+      } catch (cacheError) {
+        // Non-critical - cache will eventually be evicted by TTL
+        logger.warn(`[Cache] Failed to cleanup cache for profile ${profileId}`, cacheError)
+      }
+
       if (currentProfile.value?.id === profileId) {
         currentProfile.value = null
         buckets.value = []
@@ -214,7 +225,8 @@ export const useAppStore = defineStore('app', () => {
         currentPrefix.value || undefined,
         continuationToken.value,
         settingsStore.batchSize,
-        true
+        true, // useDelimiter
+        false // syncIndex = false for preload (don't trigger cleanup)
       )
 
       preloadedNextPage.value = {
@@ -287,7 +299,8 @@ export const useAppStore = defineStore('app', () => {
         currentPrefix.value || undefined,
         loadMore ? continuationToken.value : undefined,
         settingsStore.batchSize, // Use batch size from settings
-        true // Use delimiter for folder navigation
+        true, // Use delimiter for folder navigation
+        !loadMore // syncIndex = true only for first page to cleanup phantom objects
       )
 
       if (loadMore) {

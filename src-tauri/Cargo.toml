@@ -33,6 +33,27 @@ base64 = "0.22"
 rand = "0.8"
 url = "2.5"
 
+# SQLite database
+rusqlite = { version = "0.31", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+lazy_static = "1.4"
+
+# Production-grade cache with LRU + TTL (used by Cloudflare, Fastly)
+moka = { version = "0.12", features = ["sync"] }
+
+# Cross-platform clipboard access
+arboard = "3"
+
+# macOS-specific clipboard file reading
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
+# Windows-specific clipboard with CF_HDROP support
+[target.'cfg(target_os = "windows")'.dependencies]
+clipboard-win = "5"
+
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem
 # DO NOT REMOVE!!

@@ -1,17 +1,28 @@
 //! Metrics emission module
 //!
-//! Provides helper functions to emit S3 metrics events to the frontend.
+//! Provides helper functions to emit S3 metrics events to the frontend
+//! and store them in the SQLite metrics database.
 
+use crate::metrics_storage;
 use crate::models::{categorize_s3_error, RequestCategory, S3MetricsEvent, S3Operation};
 use tauri::{AppHandle, Manager};
 
-/// Emit a metrics event to the frontend
+/// Emit a metrics event to the frontend AND store in SQLite
 pub fn emit_metrics(app: &AppHandle, event: S3MetricsEvent) {
-    let _ = app.emit_all("metrics:s3-request", event);
+    // 1. Emit to frontend for real-time UI updates
+    let _ = app.emit_all("metrics:s3-request", event.clone());
+
+    // 2. Store in SQLite database
+    if let Ok(db) = metrics_storage::get_metrics_db() {
+        if let Err(e) = metrics_storage::record_request(&db, &event) {
+            // Log error but don't fail the operation
+            eprintln!("Failed to store metrics: {}", e);
+        }
+    }
 }
 
 /// Helper to create and emit a successful metrics event
-#[allow(dead_code, clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub fn emit_success(
     app: &AppHandle,
     operation: S3Operation,
@@ -46,7 +57,7 @@ pub fn emit_success(
 }
 
 /// Helper to create and emit a failed metrics event
-#[allow(dead_code, clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub fn emit_error(
     app: &AppHandle,
     operation: S3Operation,
